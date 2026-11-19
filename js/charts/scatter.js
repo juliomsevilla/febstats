@@ -32,5 +32,6 @@ export function scatter({ puntos, ejeX, ejeY, refX, refY, cuadrantes = [] }) {
       svg.append(s("text", { class: "punto-et", x: X(p.x) + (izq ? -p.r - 3 : p.r + 3), y: Y(p.y) + 3, "text-anchor": izq ? "end" : "start" }, p.etiqueta));
     }
   }
+  svg.__exp = { svg, csv: { cab: ["Punto", ejeX || "X", ejeY || "Y"], filas: puntos.map((p) => [p.etiqueta || p.titulo, p.x, p.y]) } };
   return svg;
 }

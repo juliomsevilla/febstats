@@ -4,38 +4,10 @@ import { h, vacioMsg, dialogo } from "../util.js";
 import { invoke, escuchar as alEvento, enLocal } from "../api.js";
 import { S } from "../state.js";
 import { hidratar } from "../graficos.js";
+import { md } from "../md.js";
 
 const A = { chats: [], chat: null, mensajes: [], grupos: [], grupo: "", equipos: [], equipo: "", jugadores: [], jugador: "", breve: false, modelo: "", modelos: [], ocupado: false, parcial: "", herr: "", escuchando: false, error: "" };
 try { const b = localStorage.getItem("ia-breve"); A.breve = b === null ? enLocal : b === "1"; } catch { /* sin almacenamiento */ } // en el iPad: respuestas breves por defecto
-
-// Markdown seguro (se escapa todo el HTML antes): títulos, negrita/cursiva, listas, tablas, citas, código y reglas.
-function md(txt) {
-  const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  const inline = (s) => esc(s).replace(/`([^`]+)`/g, "<code>$1</code>").replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/(^|[^*])\*([^*\s][^*]*?)\*(?!\*)/g, "$1<i>$2</i>").replace(/__(.+?)__/g, "<b>$1</b>");
-  const celdas = (l) => l.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((c) => c.trim());
-  const esSep = (l) => /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/.test(l);
-  const L = txt.replace(/\r/g, "").split("\n"); const out = []; let i = 0;
-  while (i < L.length) {
-    const l = L[i];
-    if (/^```/.test(l)) {
-      const lang = l.slice(3).trim(); const c = []; i++; while (i < L.length && !/^```/.test(L[i])) c.push(L[i++]); i++;
-      out.push(lang === "feb-grafico" ? `<div class="ia-graf" data-spec="${esc(c.join("\n")).replace(/"/g, "&quot;")}"></div>` : `<pre><code>${esc(c.join("\n"))}</code></pre>`); continue;
-    }
-    if (l.includes("|") && i + 1 < L.length && esSep(L[i + 1])) { // tabla
-      const cab = celdas(l); i += 2; const filas = [];
-      while (i < L.length && L[i].includes("|") && L[i].trim()) filas.push(celdas(L[i++]));
-      out.push(`<table><thead><tr>${cab.map((c) => `<th>${inline(c)}</th>`).join("")}</tr></thead><tbody>${filas.map((f) => `<tr>${cab.map((_, k) => `<td>${inline(f[k] ?? "")}</td>`).join("")}</tr>`).join("")}</tbody></table>`); continue;
-    }
-    const li = l.match(/^\s*([-*•]|\d+[.)])\s+(.*)/);
-    if (li) { const ord = /\d/.test(li[1]); const its = []; while (i < L.length) { const m = L[i].match(/^\s*([-*•]|\d+[.)])\s+(.*)/); if (!m) break; its.push(`<li>${inline(m[2])}</li>`); i++; } out.push(`<${ord ? "ol" : "ul"}>${its.join("")}</${ord ? "ol" : "ul"}>`); continue; }
-    const hd = l.match(/^(#{1,6})\s+(.*)/); if (hd) { out.push(`<h4>${inline(hd[2])}</h4>`); i++; continue; }
-    if (/^\s*(-{3,}|\*{3,})\s*$/.test(l)) { out.push("<hr>"); i++; continue; }
-    if (/^>\s?/.test(l)) { const q = []; while (i < L.length && /^>\s?/.test(L[i])) q.push(L[i++].replace(/^>\s?/, "")); out.push(`<blockquote>${inline(q.join(" "))}</blockquote>`); continue; }
-    if (l.trim()) { const p = []; while (i < L.length && L[i].trim() && !/^(```|#{1,6}\s|>|\s*([-*•]|\d+[.)])\s)/.test(L[i]) && !(L[i].includes("|") && i + 1 < L.length && esSep(L[i + 1]))) p.push(L[i++]); out.push(`<p>${inline(p.join("<br>").replace(/<br>/g, "\n")).replace(/\n/g, "<br>")}</p>`); continue; }
-    i++;
-  }
-  return out.join("");
-}
 
 async function escuchar(root) {
   if (A.escuchando) return; A.escuchando = true;

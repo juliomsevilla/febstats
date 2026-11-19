@@ -175,11 +175,7 @@ function progresion(f, foco) {
   // Gráfico + botones de exportación (PNG del gráfico y CSV con sus datos)
   const grafico = (titulo, series, etiquetas, archivo) => {
     const ch = lineChart({ series, etiquetas });
-    const png = () => pngSvg(ch.querySelector("svg"), archivo, { titulo, leyenda: series.map((s) => [s.color.startsWith("var") ? getComputedStyle(document.documentElement).getPropertyValue(s.color.slice(4, -1)).trim() || "#c81e14" : s.color, s.label]) });
-    const csv = () => csvDatos({ cab: ["Partido", ...series.map((s) => s.label)], filas: etiquetas.map((e, i) => [e, ...series.map((s) => s.valores[i])]), nombre: archivo });
-    card.append(h("div", { class: "acciones", style: { margin: "0 0 8px" } },
-      h("button", { type: "button", class: "btn", onclick: png, title: "Descargar el gráfico como imagen" }, icono("descargar"), "PNG"),
-      h("button", { type: "button", class: "btn", onclick: csv, title: "Descargar los datos del gráfico en CSV" }, icono("descargar"), "CSV")), ch);
+    card.append(ch); // los botones de exportar (PNG/CSV) los añade exportar-auto.js, solo en la app del Mac
   };
   const vacio = (t) => card.append(vacioMsg(t));
   if (f.ju) {

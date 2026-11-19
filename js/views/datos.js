@@ -122,7 +122,7 @@ function exportar(root) {
   _sel ||= new Set(S.grupos.map((g) => g.db));
   const msg = h("p", { class: "vid-ayuda" });
   const hacer = async () => {
-    const ruta = await window.__TAURI__.dialog.save({ defaultPath: "FEB-Stats-iPad.json", filters: [{ name: "Datos para la app del iPad", extensions: ["json"] }, { name: "Archivo único HTML (experimental)", extensions: ["html"] }] });
+    const ruta = await window.__TAURI__.dialog.save({ defaultPath: "FEBstats-iPad.json", filters: [{ name: "Datos para la app del iPad", extensions: ["json"] }, { name: "Archivo único HTML (experimental)", extensions: ["html"] }] });
     if (!ruta) return; msg.textContent = "Generando…";
     try { msg.textContent = await invoke("exportar_paquete", { ruta, dbs: [..._sel] }); } catch (e) { msg.textContent = String(e); }
   };

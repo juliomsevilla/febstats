@@ -10,6 +10,7 @@ import { vistaAjustes } from "./views/ajustes.js";
 import { vistaIA } from "./views/ia.js";
 import { enEscritorio, enLocal, conVideo, invoke } from "./api.js";
 import { vistaConsulta } from "./views/consulta.js";
+import { activarExportacion } from "./exportar-auto.js";
 
 const VISTAS = [
   ["equipo", "Equipo", vistaEquipo], ["jugadores", "Jugadores", vistaJugadores],
@@ -76,13 +77,13 @@ async function cargar(db) {
 function pintarNav(view, db) {
   const nav = $("nav");
   nav.replaceChildren(
-    h("div", { class: "marca" }, logo(), h("b", { text: "FEB Stats" })),
+    h("div", { class: "marca" }, logo(), h("b", { text: "FEBstats" })),
     ...VISTAS.filter(([id]) => id !== "ajustes").map(([id, nombre]) => {
       const a = h("a", { href: hashDe({ view: id, db, f: leerHash().f }), "aria-current": id === view ? "page" : null }, icono(id), h("span", { class: "t", text: nombre }));
       return a;
     }),
     h("div", { class: "grow" }),
-    VISTAS.some(([id]) => id === "ajustes") ? h("a", { href: "#/ajustes", "aria-current": view === "ajustes" ? "page" : null }, icono("ajustes"), h("span", { class: "t", text: "Ajustes" })) : null,
+    ...(VISTAS.some(([id]) => id === "ajustes") ? [h("a", { href: "#/ajustes", "aria-current": view === "ajustes" ? "page" : null }, icono("ajustes"), h("span", { class: "t", text: "Ajustes" }))] : []),
     h("button", { type: "button", class: "plegar", onclick: alternarPlegado, "aria-label": "Plegar o desplegar el menú" }, h("span", { "aria-hidden": "true", text: "⇔" }), h("span", { class: "t", text: "Plegar menú" })),
     h("button", { type: "button", class: "tema", onclick: alternarTema, "aria-label": "Cambiar tema claro/oscuro" }, icono("sol"), h("span", { class: "t", text: "Tema" })));
 }
@@ -121,7 +122,7 @@ async function render() {
   try {
     if (["consulta", "video", "ajustes", "ia"].includes(hash.view) && VISTAS.some((x) => x[0] === hash.view)) { // no dependen de ningún grupo de datos FEB
       const v = VISTAS.find((x) => x[0] === hash.view);
-      document.title = `${v[1]} · FEB Stats`; pintarNav(v[0], hash.db || ""); $("top").replaceChildren(); $("top").style.display = "none";
+      document.title = `${v[1]} · FEBstats`; pintarNav(v[0], hash.db || ""); $("top").replaceChildren(); $("top").style.display = "none";
       await v[2](main); S._previa = v[0]; return;
     }
     if (window.__quitarAtajos) window.__quitarAtajos();
@@ -139,7 +140,7 @@ async function render() {
     const f = normalizar(hash.f);
     if (JSON.stringify(f) !== JSON.stringify(hash.f)) { location.replace(hashDe({ view: hash.view, db, f })); return; }
     const vista = VISTAS.find((v) => v[0] === hash.view) || VISTAS[0];
-    document.title = `${vista[1]} · FEB Stats`;
+    document.title = `${vista[1]} · FEBstats`;
     pintarNav(vista[0], db);
     pintarTop(f);
     const cambioVista = S._previa !== vista[0];
@@ -150,5 +151,6 @@ async function render() {
     main.replaceChildren(vacioMsg("No se pudo cargar", String(e.message || e)));
   }
 }
+activarExportacion();
 window.addEventListener("hashchange", render);
 render();

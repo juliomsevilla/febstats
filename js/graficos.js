@@ -4,6 +4,7 @@ import { h, s, fpct } from "./util.js";
 import { crearCancha, lineasZonas, ZONAS, ZONA_IDS, posView } from "./court.js";
 import { estadisticasZonas, pintarZonas } from "./heat.js";
 import { S } from "./state.js";
+import { canvasSvg, canvasCancha } from "./export.js";
 
 const COLORES = ["#f4571d", "#3a7ca5", "#2a9d8f", "#7c5cff", "#e69b00", "#d71a21"];
 const num = (v) => (typeof v === "number" && Number.isFinite(v) ? v : null);
@@ -38,18 +39,32 @@ function mapaTiros(sp) {
   const mapas = h("div", { class: "graf-mapas" },
     modo !== "zonas" ? h("figure", null, puntos(), h("figcaption", { text: "Cada tiro (● acierto · ✕ fallo)" })) : null,
     modo !== "puntos" ? h("figure", null, zonas(), h("figcaption", { text: "% de acierto por zona (aciertos/tiros)" })) : null);
-  return h("div", { class: "graf" }, h("div", { class: "graf-t", text: sp.titulo || "Mapa de tiros" }),
+  const raizMapa = h("div", { class: "graf" }, h("div", { class: "graf-t", text: sp.titulo || "Mapa de tiros" }),
     sp.subtitulo ? h("div", { class: "graf-s", text: sp.subtitulo }) : null,
     h("div", { class: "graf-s", text: `${n} tiros · ${ac} aciertos (${fpct(n ? (ac / n) * 100 : 0)}) · ${(n ? pts / n : 0).toFixed(2).replace(".", ",")} pts/tiro` }), mapas);
+  raizMapa.__exp = { titulo: sp.titulo, csv: { cab: ["X plegada (m)", "Y plegada (m)", "Resultado"], filas: (sp.tiros || []).map(([x, y, m]) => [x, y, m ? "acierto" : "fallo"]) },
+    png: async () => { const cs = await Promise.all([...mapas.querySelectorAll(".cancha")].map((c) => canvasCancha(c, 900))); const W = cs.reduce((a, c) => a + c.width, 0) + 20 * (cs.length - 1), H = Math.max(...cs.map((c) => c.height));
+      const out = document.createElement("canvas"); out.width = W; out.height = H + 60; const x = out.getContext("2d"); x.fillStyle = "#fff"; x.fillRect(0, 0, W, H + 60); x.fillStyle = "#111"; x.font = "600 28px system-ui, sans-serif"; x.fillText(sp.titulo || "", 12, 38);
+      let px = 0; for (const c of cs) { x.drawImage(c, px, 60); px += c.width + 20; } return out; } };
+  return raizMapa;
 }
 
 function barras(sp) {
   const items = (sp.items || []).map((i) => ({ e: String(i.etiqueta ?? ""), v: num(i.valor) })).filter((i) => i.v != null).slice(0, 30);
   const max = Math.max(...items.map((i) => Math.abs(i.v)), 0.0001);
   const fmt = (v) => `${(Math.round(v * 10) / 10).toString().replace(".", ",")}${sp.unidad ? " " + sp.unidad : ""}`;
-  return h("div", { class: "graf" }, h("div", { class: "graf-t", text: sp.titulo || "" }), sp.subtitulo ? h("div", { class: "graf-s", text: sp.subtitulo }) : null,
+  const raiz = h("div", { class: "graf" }, h("div", { class: "graf-t", text: sp.titulo || "" }), sp.subtitulo ? h("div", { class: "graf-s", text: sp.subtitulo }) : null,
     h("div", { class: "graf-barras" }, items.map((i, k) => h("div", { class: "graf-fila" }, h("span", { class: "graf-e", text: i.e }),
       h("span", { class: "graf-b" }, h("span", { style: `width:${Math.max(2, (Math.abs(i.v) / max) * 100)}%;background:${COLORES[k % COLORES.length]}` })), h("span", { class: "graf-v", text: fmt(i.v) })))));
+  raiz.__exp = { titulo: sp.titulo, csv: { cab: ["Etiqueta", sp.unidad ? `Valor (${sp.unidad})` : "Valor"], filas: items.map((i) => [i.e, i.v]) },
+    png: async () => { // barras horizontales dibujadas directamente en un canvas
+      const filaH = 36, W = 1100, Hh = 90 + items.length * filaH, c = document.createElement("canvas"); c.width = W; c.height = Hh; const x = c.getContext("2d");
+      x.fillStyle = "#fff"; x.fillRect(0, 0, W, Hh); x.fillStyle = "#111"; x.font = "600 26px system-ui, sans-serif"; x.fillText(sp.titulo || "", 20, 38);
+      if (sp.subtitulo) { x.fillStyle = "#666"; x.font = "16px system-ui, sans-serif"; x.fillText(sp.subtitulo, 20, 62); }
+      x.font = "17px system-ui, sans-serif";
+      items.forEach((i, k) => { const y = 80 + k * filaH; x.fillStyle = "#111"; x.textAlign = "left"; x.fillText(i.e.slice(0, 34), 20, y + 22); const w = Math.max(3, (Math.abs(i.v) / max) * 560); x.fillStyle = COLORES[k % COLORES.length]; x.fillRect(360, y + 4, w, 24); x.fillStyle = "#111"; x.fillText(fmt(i.v), 360 + w + 10, y + 22); });
+      return c; } };
+  return raiz;
 }
 
 function lineas(sp) {
@@ -65,8 +80,11 @@ function lineas(sp) {
     const pts = x.v.map((v, i) => (v == null ? null : [X(i), Y(v)])).filter(Boolean); const col = COLORES[k % COLORES.length];
     svg.append(s("polyline", { points: pts.map((p) => p.join(",")).join(" "), fill: "none", stroke: col, "stroke-width": 2.2, "stroke-linejoin": "round" }), ...pts.map((p) => s("circle", { cx: p[0], cy: p[1], r: 3, fill: col })));
   });
-  return h("div", { class: "graf" }, h("div", { class: "graf-t", text: sp.titulo || "" }), sp.subtitulo ? h("div", { class: "graf-s", text: sp.subtitulo }) : null, svg,
+  const raiz = h("div", { class: "graf" }, h("div", { class: "graf-t", text: sp.titulo || "" }), sp.subtitulo ? h("div", { class: "graf-s", text: sp.subtitulo }) : null, svg,
     h("div", { class: "graf-leyenda" }, series.map((x, k) => h("span", null, h("i", { style: `background:${COLORES[k % COLORES.length]}` }), x.n))));
+  raiz.__exp = { titulo: sp.titulo, csv: { cab: ["Etiqueta", ...series.map((x) => x.n)], filas: Array.from({ length: n }, (_, i) => [et[i] ?? i + 1, ...series.map((x) => x.v[i] ?? "")]) },
+    png: () => canvasSvg(svg, { titulo: sp.titulo || "", leyenda: series.map((x, k) => [COLORES[k % COLORES.length], x.n]) }) };
+  return raiz;
 }
 
 function dispersion(sp) {
@@ -84,7 +102,9 @@ function dispersion(sp) {
   }
   pts.forEach((p, k) => svg.append(s("circle", { cx: X(p.x), cy: Y(p.y), r: 5, fill: COLORES[k % COLORES.length], "fill-opacity": 0.85 }), s("text", { x: X(p.x) + 7, y: Y(p.y) + 3, class: "graf-eje" }, p.e.slice(0, 16))));
   svg.append(s("text", { x: (L + W - R) / 2, y: H - 2, class: "graf-eje", "text-anchor": "middle" }, sp.eje_x || ""), s("text", { x: 10, y: T + 8, class: "graf-eje" }, sp.eje_y || ""));
-  return h("div", { class: "graf" }, h("div", { class: "graf-t", text: sp.titulo || "" }), svg);
+  const raiz = h("div", { class: "graf" }, h("div", { class: "graf-t", text: sp.titulo || "" }), svg);
+  raiz.__exp = { titulo: sp.titulo, csv: { cab: ["Punto", sp.eje_x || "X", sp.eje_y || "Y"], filas: pts.map((p) => [p.e, p.x, p.y]) }, png: () => canvasSvg(svg, { titulo: sp.titulo || "" }) };
+  return raiz;
 }
 
 export function renderGrafico(sp) {

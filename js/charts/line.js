@@ -39,7 +39,9 @@ export function lineChart({ series, etiquetas, formato = f1 }) {
   svg.addEventListener("click", ver);
   svg.style.touchAction = "pan-y";
   svg.addEventListener("pointerleave", (ev) => { if (ev.pointerType === "mouse") { tip.hide(); guia.setAttribute("visibility", "hidden"); } });
-  return h("div", null, svg, h("div", { class: "leyenda-serie" }, series.map((x) => h("span", null, h("i", { style: { background: x.color } }), x.label))));
+  const raiz = h("div", null, svg, h("div", { class: "leyenda-serie" }, series.map((x) => h("span", null, h("i", { style: { background: x.color } }), x.label))));
+  raiz.__exp = { svg, leyenda: series.map((x) => [x.color, x.label]), csv: { cab: ["Partido", ...series.map((x) => x.label)], filas: etiquetas.map((e, i) => [e, ...series.map((x) => x.valores[i])]) } };
+  return raiz;
 }
 function niceStep(raw) {
   const p = Math.pow(10, Math.floor(Math.log10(raw || 1))), f = raw / p;

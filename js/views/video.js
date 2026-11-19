@@ -45,7 +45,7 @@ async function resolverPartido() {
 }
 
 export async function vistaVideo(root) {
-  if (!enEscritorio) { root.replaceChildren(vacioMsg("Solo en la app de escritorio", "El análisis de vídeo necesita la versión de escritorio de FEB Stats.")); return; }
+  if (!enEscritorio) { root.replaceChildren(vacioMsg("Solo en la app de escritorio", "El análisis de vídeo necesita la versión de escritorio de FEBstats.")); return; }
   V.videos = await invoke("listar_videos");
   V.botones = await invoke("listar_botones");
   V.grupos = await invoke("listar_grupos");
@@ -140,6 +140,7 @@ function pintar(root) {
   };
 
   const marcar = async (b) => {
+    vid.pause(); // al registrar un momento, el vídeo se detiene para poder escribir la nota
     const t = vid.currentTime, r = relojEn(t);
     const ev = { video_id: V.video.id, boton_id: b.id, t_ini: Math.max(0, t - b.pre_s), t_fin: t + b.post_s, nota: "", equipo: null, jugador: null, cuarto: r?.cuarto ?? null, reloj_s: r ? Math.round(r.reloj_s) : null };
     if (V.partido && V.jugadorActivo) aplicarJugador(ev, V.jugadorActivo);
@@ -151,7 +152,9 @@ function pintar(root) {
     document.querySelector(`tr[data-id="${ev.id}"] textarea`)?.focus(); // escribir el porqué de inmediato (Enter/Esc vuelve a los atajos)
   };
 
+  let capturando = false; // antirrebote: una pulsación = una captura
   const capturar = async () => {
+    if (capturando) return; capturando = true; setTimeout(() => { capturando = false; }, 1200);
     if (!vid.videoWidth) { decir("El vídeo aún no está cargado."); return; }
     const c = document.createElement("canvas"); c.width = vid.videoWidth; c.height = vid.videoHeight;
     try {
@@ -210,8 +213,9 @@ function pintar(root) {
     const b = id && V.botones.find((x) => x.atajo === id);
     if (b) { ev.preventDefault(); marcar(b); }
   };
-  document.addEventListener("keydown", teclas);
-  window.__quitarAtajos = () => { document.removeEventListener("keydown", teclas); window.__quitarAtajos = null; };
+  if (window.__teclasVideo) document.removeEventListener("keydown", window.__teclasVideo); // nunca dos manejadores a la vez
+  window.__teclasVideo = teclas; document.addEventListener("keydown", teclas);
+  window.__quitarAtajos = () => { document.removeEventListener("keydown", teclas); window.__teclasVideo = null; window.__quitarAtajos = null; };
 
   root.replaceChildren(cab,
     h("div", { class: "vid-main" },

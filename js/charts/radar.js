@@ -17,5 +17,6 @@ export function radar({ ejes, colores = ["#d9480f", "#2f6fed"], hayB = true }) {
   const forma = (vals, color, op) => s("polygon", { points: poli(vals), style: { fill: color, "fill-opacity": op, stroke: color, "stroke-width": 2, "stroke-linejoin": "round" } });
   if (hayB) svg.append(forma(ejes.map((e) => e.b), colores[1], 0.22));
   svg.append(forma(ejes.map((e) => e.a), colores[0], 0.3));
+  svg.__exp = { svg, csv: { cab: ["Eje", "Serie A (0-1)", ...(hayB ? ["Serie B (0-1)"] : [])], filas: ejes.map((e) => [e.label, e.a, ...(hayB ? [e.b] : [])]) } };
   return svg;
 }

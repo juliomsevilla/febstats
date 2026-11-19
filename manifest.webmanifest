@@ -1,6 +1,6 @@
 {
-  "name": "FEB Stats",
-  "short_name": "FEB Stats",
+  "name": "FEBstats",
+  "short_name": "FEBstats",
   "start_url": "./", "scope": "./",
   "display": "standalone",
   "orientation": "any",

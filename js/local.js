@@ -62,7 +62,7 @@ export async function importarPaquetes(archivos) {
   for (const f of archivos) {
     let j; try { j = JSON.parse(await f.text()); } catch { throw new Error(`«${f.name}» no es un archivo de datos válido.`); }
     const lista = j.formato === "feb-stats-paquete" ? j.grupos : (j.clasificacion && j.competicion ? [{ db: j.db, payload: j }] : null);
-    if (!lista) throw new Error(`«${f.name}» no parece un paquete de FEB Stats (expórtalo desde la app del Mac).`);
+    if (!lista) throw new Error(`«${f.name}» no parece un paquete de FEBstats (expórtalo desde la app del Mac).`);
     for (const g of lista) {
       const p = g.payload; const db = g.db || nombreDb(p);
       await put("grupos", { db, competicion: p.competicion, grupo: p.grupo, temporada: p.temporada, partidos: (p.partidos || []).length, importado: new Date().toISOString(), payload: p });

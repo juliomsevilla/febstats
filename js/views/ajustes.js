@@ -5,20 +5,25 @@ import { panelIA } from "./ia.js";
 import { panelBotones } from "./video.js";
 import { invoke, elegirCarpeta, enRemoto, enLocal } from "../api.js";
 import { importarPaquetes } from "../local.js";
+import { panelAyuda, panelAutoria, panelLicencia } from "./info.js";
 
-const TABS = [["datos", enLocal ? "Datos" : "Descarga de datos"], ["ia", "IA"], ["botones", "Botones de vídeo"], ["carpetas", "Carpetas"], ["ipad", "Acceso por red"]]
-  .filter(([t]) => enLocal ? (t === "datos" || t === "ia") : enRemoto ? (t === "datos" || t === "botones") : true);
+const INFO = ["ayuda", "autoria", "licencia"]; // en todas las versiones (también en el iPad)
+const TABS = [["datos", enLocal ? "Datos" : "Descarga de datos"], ["ia", "IA"], ["botones", "Botones de vídeo"], ["carpetas", "Carpetas"], ["ipad", "Acceso por red"], ["ayuda", "Ayuda"], ["autoria", "Autoría"], ["licencia", "Licencia"]]
+  .filter(([t]) => INFO.includes(t) || (enLocal ? (t === "datos" || t === "ia") : enRemoto ? (t === "datos" || t === "botones") : true));
 
 export async function vistaAjustes(root) {
   const q = new URLSearchParams((location.hash.split("?")[1] || ""));
   const tab = TABS.some(([t]) => t === q.get("tab")) ? q.get("tab") : "datos";
   const cont = h("div", { class: "aj-cont" });
   let version = ""; try { version = window.__TAURI__?.app ? "v" + (await window.__TAURI__.app.getVersion()) : ""; } catch { /* sin versión */ }
-  root.replaceChildren(h("div", { class: "titulo" }, h("h1", { text: "Ajustes" }), version ? h("p", { text: `FEB Stats ${version}` }) : null),
+  root.replaceChildren(h("div", { class: "titulo" }, h("h1", { text: "Ajustes" }), version ? h("p", { text: `FEBstats ${version}` }) : null),
     tabsBar(TABS, tab, (v) => { location.hash = `#/ajustes?tab=${v}`; }), cont);
   if (tab === "datos") await (enLocal ? panelImportar(cont) : vistaDatos(cont));
   else if (tab === "ia") await panelIA(cont);
   else if (tab === "botones") await panelBotones(cont);
+  else if (tab === "ayuda") await panelAyuda(cont);
+  else if (tab === "autoria") await panelAutoria(cont);
+  else if (tab === "licencia") await panelLicencia(cont);
   else if (tab === "carpetas") await panelCarpetas(cont);
   else await panelRemoto(cont);
 }

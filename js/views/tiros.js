@@ -5,7 +5,7 @@ import { crearCancha, crearCanchaCompleta, lineasZonas, ZONAS, ZONA_IDS, asignar
 import { kde, pintarDensidad, pintarEficiencia, pintarZonas, estadisticasZonas, spreadRange, celdasSR, colorPPA, colorEficiencia, rgb,
   degradadoDensidad, degradadoEficiencia, esperadoPorCelda, puntosEsperados, colorXP, degradadoXP, srPromedioEntreEquipos, srPromedioJugadores, srContraPromedio } from "../heat.js";
 import { AYUDA } from "../ayuda.js";
-import { svgUrl, cargarImg, nombreArchivo } from "../export.js";
+import { canvasCancha, nombreArchivo } from "../export.js";
 
 const T = { pista: "sencilla", bw: 1.2, cuartos: new Set(), ac: true, fa: true, tabDisp: "mapa", tabSR: "mapa" };
 const CUARTOS = [[1, "1.º"], [2, "2.º"], [3, "3.º"], [4, "4.º"], [5, "Prór."]];
@@ -96,7 +96,7 @@ export function mapaCancha({ tiros, modo, bw = 1.2, invertido = false, grid = nu
   c.el.addEventListener("click", ver); // táctil: un toque muestra el detalle
   c.el.addEventListener("pointerleave", (ev) => { if (ev.pointerType === "mouse") { tip.hide(); marca.setAttribute("visibility", "hidden"); } });
   if (tamano === "mini") c.el.style.maxWidth = "380px";
-  botonPNG(c.el, nombreArchivo("mapa", ctxArchivo, modo, invertido ? "en_contra" : "a_favor"));
+  botonPNG(c.el, nombreArchivo("mapa", ctxArchivo, modo, invertido ? "en_contra" : "a_favor"), tiros);
   return c;
 }
 
@@ -109,7 +109,7 @@ function canchaCompleta(tiros, ac, fa, invertido = false) {
   }
   c.datos.append(g);
   c.el.style.maxWidth = "420px";
-  botonPNG(c.el, nombreArchivo("mapa", ctxArchivo, "pista_completa", invertido ? "en_contra" : "a_favor"));
+  botonPNG(c.el, nombreArchivo("mapa", ctxArchivo, "pista_completa", invertido ? "en_contra" : "a_favor"), tiros);
   return c.el;
 }
 
@@ -137,20 +137,10 @@ function seleccion(f) {
   return { foco, base: q(base), contra: q(contra), dos: !!foco && !f.ju };
 }
 
-// Exportar un mapa a PNG: suelo (SVG) + calor (canvas, si lo hay) + líneas y datos (SVG), con los estilos ya resueltos.
+// Exportación de los mapas (PNG y CSV de los tiros): la toolbar la añade exportar-auto.js (solo en la app del Mac).
 let ctxArchivo = "";
-async function exportar(el, nombre) {
-  const vb = el.querySelector(".cancha-base").viewBox.baseVal, W = 1200, H = Math.round((W * vb.height) / vb.width), k = W / vb.width;
-  const out = h("canvas", { width: W, height: H }), ctx = out.getContext("2d");
-  ctx.drawImage(await cargarImg(svgUrl(el.querySelector(".cancha-base"), W, H)), 0, 0, W, H);
-  const hc = el.querySelector(".cancha-heat"); if (hc) ctx.drawImage(hc, 0.9 * k, 0.9 * k, 15 * k, 14 * k);
-  ctx.drawImage(await cargarImg(svgUrl(el.querySelector(".cancha-over"), W, H)), 0, 0, W, H);
-  const a = h("a", { href: out.toDataURL("image/png"), download: nombre + ".png" });
-  document.body.append(a); a.click(); a.remove();
-}
-function botonPNG(el, archivo) {
-  el.append(h("button", { type: "button", class: "btn btn-png", title: "Descargar este mapa como imagen", "aria-label": "Descargar mapa como imagen", onclick: (e) => { e.stopPropagation(); exportar(el, archivo); } }, icono("descargar"), "PNG"));
-}
+const csvTiros = (tiros) => ({ cab: ["Jugador", "Equipo", "Cuarto", "Resultado", "X (m)", "Y (m)", "X plegada (m)", "Y plegada (m)"], filas: (tiros || []).map((t) => [t.jugador, t.equipo, t.cuarto, t.resultado, t.X, t.Y, t.Xinv, t.Yinv]) });
+function botonPNG(el, archivo, tiros) { el.__exp = { nombre: archivo, png: () => canvasCancha(el), csv: csvTiros(tiros) }; }
 
 export function vistaTiros(root, f) {
   const { foco, base, contra, dos } = seleccion(f), rerender = () => vistaTiros(root, f);

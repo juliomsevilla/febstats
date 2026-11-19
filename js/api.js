@@ -25,7 +25,7 @@ function pedirPin() {
     if (r.ok) location.reload(); else msg.textContent = r.status === 429 ? await r.text() : "PIN incorrecto.";
   };
   pin.addEventListener("keydown", (e) => { if (e.key === "Enter") entrar(); });
-  document.body.append(h("div", { id: "pin-pantalla" }, h("div", { class: "pin-caja" }, h("b", { text: "FEB Stats" }), h("p", { text: "Introduce el PIN que aparece en Ajustes → Acceso iPad del Mac." }), pin,
+  document.body.append(h("div", { id: "pin-pantalla" }, h("div", { class: "pin-caja" }, h("b", { text: "FEBstats" }), h("p", { text: "Introduce el PIN que aparece en Ajustes → Acceso iPad del Mac." }), pin,
     h("button", { type: "button", class: "btn primario", onclick: entrar }, "Entrar"), msg)));
   pin.focus();
 }
@@ -46,6 +46,7 @@ export const enRemoto = modo === "remoto";
 export const enLocal = modo === "local";
 export const enEscritorio = modo !== "web";            // hay un backend (nativo, remoto o local)
 export const conVideo = modo === "nativo" || modo === "remoto"; // vídeo y capturas solo con la app del Mac
+export const puedeExportar = modo === "nativo" || modo === "web";     // CSV/PNG de tablas y gráficos: solo en el Mac (no en el iPad)
 export const puedeDescargar = modo === "nativo" || modo === "remoto"; // el scraper solo corre en el Mac
 export const invoke = (cmd, args) => (T ? T.core.invoke(cmd, args) : modo === "local" ? llamarLocal(cmd, args) : llamarRemoto(cmd, args));
 export const urlVideo = (v) => (T ? T.core.convertFileSrc(v.ruta) : `/video/${v.id}`);
@@ -72,4 +73,21 @@ export async function elegirVideo() {
       : h("p", { text: "No hay vídeos en la carpeta de vídeos del Mac. Copia ahí los archivos (Ajustes → Carpetas en el Mac) y vuelve a intentarlo." }));
     d.addEventListener("close", () => res(null), { once: true });
   });
+}
+
+// Guarda un archivo (CSV, PNG…) a partir de una URL de datos. En la app del Mac pregunta dónde; en un navegador lo descarga.
+const aBase64 = (dataUrl) => {
+  if (/;base64,/.test(dataUrl)) return dataUrl.split(",")[1];
+  const bytes = new TextEncoder().encode(decodeURIComponent(dataUrl.slice(dataUrl.indexOf(",") + 1)));
+  let bin = ""; for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000)); return btoa(bin);
+};
+export async function guardarArchivo(nombre, dataUrl) {
+  if (T) {
+    const ext = nombre.split(".").pop();
+    const ruta = await T.dialog.save({ defaultPath: nombre, filters: [{ name: ext.toUpperCase(), extensions: [ext] }] });
+    if (!ruta) return false;
+    await T.core.invoke("guardar_archivo", { ruta, base64: aBase64(dataUrl) });
+    return true;
+  }
+  const a = h("a", { href: dataUrl, download: nombre }); document.body.append(a); a.click(); a.remove(); return true;
 }
