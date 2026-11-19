@@ -3,6 +3,7 @@
 import { h, vacioMsg, dialogo } from "../util.js";
 import { invoke, escuchar as alEvento, enLocal } from "../api.js";
 import { S } from "../state.js";
+import { hidratar } from "../graficos.js";
 
 const A = { chats: [], chat: null, mensajes: [], grupos: [], grupo: "", equipos: [], equipo: "", jugadores: [], jugador: "", breve: false, modelo: "", modelos: [], ocupado: false, parcial: "", herr: "", escuchando: false, error: "" };
 try { const b = localStorage.getItem("ia-breve"); A.breve = b === null ? enLocal : b === "1"; } catch { /* sin almacenamiento */ } // en el iPad: respuestas breves por defecto
@@ -16,7 +17,10 @@ function md(txt) {
   const L = txt.replace(/\r/g, "").split("\n"); const out = []; let i = 0;
   while (i < L.length) {
     const l = L[i];
-    if (/^```/.test(l)) { const c = []; i++; while (i < L.length && !/^```/.test(L[i])) c.push(L[i++]); i++; out.push(`<pre><code>${esc(c.join("\n"))}</code></pre>`); continue; }
+    if (/^```/.test(l)) {
+      const lang = l.slice(3).trim(); const c = []; i++; while (i < L.length && !/^```/.test(L[i])) c.push(L[i++]); i++;
+      out.push(lang === "feb-grafico" ? `<div class="ia-graf" data-spec="${esc(c.join("\n")).replace(/"/g, "&quot;")}"></div>` : `<pre><code>${esc(c.join("\n"))}</code></pre>`); continue;
+    }
     if (l.includes("|") && i + 1 < L.length && esSep(L[i + 1])) { // tabla
       const cab = celdas(l); i += 2; const filas = [];
       while (i < L.length && L[i].includes("|") && L[i].trim()) filas.push(celdas(L[i++]));
@@ -83,7 +87,7 @@ function actualizarMensajes() {
   caja.scrollTop = caja.scrollHeight;
 }
 function burbujas() {
-  const b = A.mensajes.map((m) => { const d = h("div", { class: `ia-m ${m.rol === "user" ? "yo" : "ia"}` }); d.innerHTML = m.rol === "user" ? md(m.contenido) : md(m.contenido); return d; });
+  const b = A.mensajes.map((m) => { const d = h("div", { class: `ia-m ${m.rol === "user" ? "yo" : "ia"}` }); d.innerHTML = md(m.contenido); hidratar(d); return d; });
   if (A.ocupado) { const d = h("div", { class: "ia-m ia" }); d.innerHTML = A.parcial ? md(A.parcial) : `<p class="ia-pensando">${A.herr ? "Consultando datos… <code>" + A.herr.replace(/</g, "&lt;").slice(0, 70) + "</code>" : "Pensando…"}</p>`; b.push(d); }
   if (A.error) b.push(h("div", { class: "ia-m ia ia-err", text: A.error }));
   return b;
@@ -107,11 +111,21 @@ export async function panelIA(cont) {
     try { lista = await invoke("listar_modelos_ia", { baseUrl: url.value, apiKey: clave.value || null }); A.modelos = lista; if (!modelo || !lista.includes(modelo)) { modelo = lista.includes("deepseek-chat") ? "deepseek-chat" : lista[0]; manual.value = modelo; } msg.textContent = `${lista.length} modelos disponibles.`; pintarModelo(); }
     catch (e) { msg.textContent = String(e); }
   };
-  const guardar = async () => { await invoke("guardar_ajustes_ia", { baseUrl: url.value, modelo, apiKey: clave.value || null }); clave.value = ""; A.modelo = modelo; };
+  const PERFILES = [
+    ["Entrenador jefe", "Actúa como un entrenador jefe de baloncesto con 20 años de experiencia en categorías FEB. Habla claro y directo, como en un vestuario. Prioriza decisiones: quién juega, qué defensa, qué sistema o jugada. Explica el porqué con 2-3 datos clave y termina siempre con un plan de acción concreto. Si faltan datos, dilo."],
+    ["Analista de scouting", "Actúa como analista de scouting de un cuerpo técnico. Para cada rival o jugador entrega: Resumen · Ataque (tendencias, zonas de tiro, ritmo) · Defensa · Jugadores a vigilar · Plan de partido (cómo atacarles y cómo defenderles). Apóyate siempre en cifras de los datos y avisa de las muestras pequeñas."],
+    ["Ayudante en directo (breve)", "Estoy en pleno partido. Responde en máximo 3 frases, sin introducción ni despedida, con lo más accionable primero. Si hace falta una cifra, da solo la imprescindible."],
+    ["Formador de jugadores", "Actúa como entrenador de formación. Evalúa a los jugadores con foco en su desarrollo: qué hacen bien, qué deben mejorar y 2-3 ejercicios o hábitos concretos para trabajarlo. Tono positivo y exigente."],
+  ];
+  const instr = h("textarea", { rows: 7, placeholder: "Opcional. Escribe cómo quieres que se comporte el asistente (rol, estilo, qué priorizar, formato de las respuestas…)." }, a.instrucciones || "");
+  const guardar = async () => { await invoke("guardar_ajustes_ia", { baseUrl: url.value, modelo, apiKey: clave.value || null, instrucciones: instr.value }); clave.value = ""; A.modelo = modelo; };
   pintarModelo();
   cont.replaceChildren(h("div", { class: "ia-ajustes" },
     h("p", { class: "vid-ayuda", text: "Por defecto DeepSeek (platform.deepseek.com). Sirve cualquier servicio compatible con la API de OpenAI. La clave se guarda solo en este ordenador (carpeta de datos); no la compartas junto con la carpeta." }),
     h("label", null, "URL del servicio", url), h("label", null, "Clave de API", clave),
+    h("label", null, "Perfil del asistente (su rol e instrucciones)", instr),
+    h("div", { class: "vid-herr" }, ...PERFILES.map(([n, t]) => h("button", { type: "button", class: "btn", onclick: () => { instr.value = t; } }, n)), h("button", { type: "button", class: "btn fantasma", onclick: () => { instr.value = ""; } }, "Quitar perfil")),
+    h("p", { class: "vid-ayuda", text: "Elige un perfil de ejemplo y edítalo, o escribe el tuyo. Se aplica a todas las conversaciones (las nuevas y las ya abiertas) y se guarda en este dispositivo." }),
     h("div", { class: "ia-fila" }, h("label", null, "Modelo", cajaModelo), h("button", { type: "button", class: "btn", onclick: cargar }, "Cargar modelos")),
     h("p", { class: "vid-ayuda", text: "Pega la clave y pulsa «Cargar modelos» para elegir de la lista del servicio, o escribe el nombre a mano." }),
     h("p", { class: "vid-ayuda", text: "Privacidad: a la IA solo se envían textos y cifras que salen de tus datos (estadísticas y tus notas). Nunca el vídeo ni imágenes." }),

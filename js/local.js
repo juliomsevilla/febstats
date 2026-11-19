@@ -97,7 +97,7 @@ async function todosPayloads() {
 }
 
 // ---------- ajustes de IA (en este dispositivo) ----------
-const cfgIA = () => { try { return { base_url: "https://api.deepseek.com", modelo: "deepseek-chat", api_key: "", ...JSON.parse(localStorage.getItem("feb-ia") || "{}") }; } catch { return { base_url: "https://api.deepseek.com", modelo: "deepseek-chat", api_key: "" }; } };
+const cfgIA = () => { try { return { base_url: "https://api.deepseek.com", modelo: "deepseek-chat", api_key: "", instrucciones: "", ...JSON.parse(localStorage.getItem("feb-ia") || "{}") }; } catch { return { base_url: "https://api.deepseek.com", modelo: "deepseek-chat", api_key: "", instrucciones: "" }; } };
 const guardarCfgIA = (c) => { try { localStorage.setItem("feb-ia", JSON.stringify(c)); } catch { /* sin almacenamiento: solo esta sesión */ } };
 
 // ---------- herramientas de la IA (equivalentes a ia.rs, sin SQL ni vídeo) ----------
@@ -108,7 +108,13 @@ const HERRAMIENTAS = [
   { name: "partidos_jugador", description: "Estadística partido a partido (box score) de un jugador o de un equipo, para ver su evolución. Filtra por jugador y/o equipo; db opcional.", parameters: { type: "object", properties: { jugador: { type: "string" }, equipo: { type: "string" }, db: { type: "string" } } } },
   { name: "tiros_resumen", description: "Resumen de tiros por zona de la cancha (intentos, aciertos, %) de un jugador o equipo. Zonas: pintura, media_baja, media_centro, media_alta, corner3_baja, corner3_alta, ala3_baja, ala3_alta, top3.", parameters: { type: "object", properties: { jugador: { type: "string" }, equipo: { type: "string" }, db: { type: "string" } } } },
 ];
-const SISTEMA = "Eres el asistente de análisis de un entrenador de baloncesto español. Respondes SIEMPRE en español, con datos reales de las herramientas: nunca inventes cifras. Hay datos de varias competiciones, grupos y temporadas a la vez: si la pregunta no precisa cuál, usa listar_datos y busca en todos (o pregunta cuál si es ambiguo), e indica siempre la temporada/grupo de cada dato. Los datos vienen de la FEB (estadística de partido y mapa de tiros). No tienes acceso al vídeo ni a imágenes, solo a texto y cifras. Sé concreto y útil para tomar decisiones de entrenador; usa listas cortas y tablas markdown cuando comparen cifras.";
+HERRAMIENTAS.push(
+  { name: "grafico_ranking", description: "DIBUJA un gráfico de barras real con el ranking de jugadores por una métrica (datos reales de la app). Métricas: puntos_prom, reb_tot_prom, asistencias_prom, recuperaciones_prom, perdidas_prom, valoracion_prom, t2_pct, t3_pct, tl_pct, tc_pct, ts_pct, uso_pct, ppt, indice_final. Por defecto: grupo más reciente, top 10, mínimo 3 partidos.", parameters: { type: "object", properties: { metrica: { type: "string" }, equipo: { type: "string" }, db: { type: "string" }, n: { type: "integer" }, min_partidos: { type: "integer" } }, required: ["metrica"] } },
+  { name: "grafico_evolucion", description: "DIBUJA un gráfico de líneas real con la evolución partido a partido de un jugador. Métricas (hasta 3): puntos, reb_tot, asistencias, recuperaciones, perdidas, valoracion, minutos, tc_pct.", parameters: { type: "object", properties: { jugador: { type: "string" }, equipo: { type: "string" }, db: { type: "string" }, metricas: { type: "array", items: { type: "string" } } }, required: ["jugador", "metricas"] } },
+  { name: "grafico_tiros", description: "DIBUJA el mapa de tiros real (cada tiro y % por zona) de un jugador o equipo. Filtros opcionales: cuarto, db.", parameters: { type: "object", properties: { jugador: { type: "string" }, equipo: { type: "string" }, db: { type: "string" }, cuarto: { type: "integer" } } } },
+  { name: "crear_grafico", description: "DIBUJA un gráfico genérico con cifras que YA has obtenido de otras herramientas (nunca inventes valores). tipo=barras: items [{etiqueta, valor}]. tipo=lineas: etiquetas [..] y series [{nombre, valores [..]}]. tipo=dispersion: puntos [{etiqueta, x, y}] con eje_x y eje_y. Opcional: titulo, unidad.", parameters: { type: "object", properties: { tipo: { type: "string", enum: ["barras", "lineas", "dispersion"] }, titulo: { type: "string" }, unidad: { type: "string" }, items: { type: "array", items: { type: "object" } }, etiquetas: { type: "array", items: { type: "string" } }, series: { type: "array", items: { type: "object" } }, puntos: { type: "array", items: { type: "object" } }, eje_x: { type: "string" }, eje_y: { type: "string" } }, required: ["tipo"] } },
+);
+const SISTEMA = "Eres el asistente de análisis de un entrenador de baloncesto español. Respondes SIEMPRE en español, con datos reales de las herramientas: nunca inventes cifras. Hay datos de varias competiciones, grupos y temporadas a la vez: si la pregunta no precisa cuál, usa listar_datos y busca en todos (o pregunta cuál si es ambiguo), e indica siempre la temporada/grupo de cada dato. Los datos vienen de la FEB (estadística de partido y mapa de tiros). Si piden un gráfico, mapa de tiros, ranking o evolución, usa las herramientas grafico_ranking, grafico_evolucion, grafico_tiros o crear_grafico: la app los DIBUJA de verdad; nunca dibujes con texto o ASCII y no copies cifras inventadas (crear_grafico solo con cifras ya obtenidas de otras herramientas). No tienes acceso al vídeo ni a imágenes, solo a texto y cifras. Sé concreto y útil para tomar decisiones de entrenador; usa listas cortas y tablas markdown cuando comparen cifras.";
 
 const CAMPOS_J = ["jugador", "equipo", "partidos", "puntos_prom", "reb_tot_prom", "asistencias_prom", "recuperaciones_prom", "perdidas_prom", "valoracion_prom", "t2_pct", "t3_pct", "tl_pct", "tc_pct", "ts_pct", "uso_pct", "pp_pos", "ppt", "rol", "perfil", "indice_final", "minutos_total", "puntos"];
 const compacto = (j, g) => { const o = { temporada: g.temporada, grupo: g.grupo, competicion: g.competicion }; for (const k of CAMPOS_J) if (j[k] != null) o[k] = j[k]; return o; };
@@ -133,7 +139,67 @@ export function resumenZonas(tiros) { // para la ficha de jugador: zonas con tir
   return z.map(([i, a], k) => ({ nombre: NOMBRES[k], intentos: i, aciertos: a, pct: i ? Math.round((a / i) * 1000) / 10 : null })).filter((x) => x.intentos).sort((a, b) => b.intentos - a.intentos);
 }
 
+// ---------- gráficos (la IA los pide; la app los dibuja) ----------
+const METRICAS_RANKING = { puntos_prom: ["Puntos por partido", "", 1], reb_tot_prom: ["Rebotes por partido", "", 1], asistencias_prom: ["Asistencias por partido", "", 1], recuperaciones_prom: ["Robos por partido", "", 1], perdidas_prom: ["Pérdidas por partido", "", 1],
+  valoracion_prom: ["Valoración por partido", "", 1], t2_pct: ["% de T2", "%", 1], t3_pct: ["% de T3", "%", 1], tl_pct: ["% de TL", "%", 1], tc_pct: ["% de tiro de campo", "%", 1], ts_pct: ["TS%", "%", 100], uso_pct: ["Uso de posesión", "%", 1], ppt: ["Puntos por tiro", "", 1], indice_final: ["Índice de valoración", "", 1] };
+const etiquetaGrupo = (g) => `${g.temporada} · ${String(g.grupo).replace(/"/g, "")}`;
+const conGrafico = (spec, resumen) => ({ __grafico: spec, resumen });
+const redondea = (v, d = 100) => Math.round(v * d) / d;
+const minF = (s) => { const [m, sg] = String(s || "").split(":"); return (parseFloat(m) || 0) + (parseFloat(sg) || 0) / 60; };
+
+async function grupoElegido(db) { const t = await todosPayloads(); return db ? t.find(([g]) => stem(g.db) === stem(db)) : t[0]; }
+
+async function graficoRanking(a) {
+  const m = METRICAS_RANKING[a.metrica]; if (!m) return { error: `Métrica no válida. Usa una de: ${Object.keys(METRICAS_RANKING).join(", ")}` };
+  const gr = await grupoElegido(a.db); if (!gr) return { error: "No hay datos de ese grupo." }; const [g, p] = gr;
+  const eq = a.equipo ? slug(a.equipo) : null; const n = Math.min(20, Math.max(3, a.n || 10)); const minp = a.min_partidos ?? 3;
+  const v = (p.jugadores || []).filter((j) => (j.partidos || 0) >= minp && (!eq || slug(j.equipo).includes(eq)) && typeof j[a.metrica] === "number").map((j) => [j.jugador, j.equipo, j[a.metrica] * m[2]]).sort((x, y) => y[2] - x[2]).slice(0, n);
+  if (!v.length) return { error: "Ningún jugador cumple el filtro." };
+  const items = v.map(([j, e, x]) => ({ etiqueta: eq ? j : `${j} (${e})`, valor: redondea(x) }));
+  return conGrafico({ tipo: "barras", titulo: `${m[0]} — top ${v.length}`, subtitulo: etiquetaGrupo(g), unidad: m[1], items }, { grupo: etiquetaGrupo(g), ranking: items });
+}
+
+async function graficoEvolucion(a) {
+  const VALIDAS = { puntos: "Puntos", reb_tot: "Rebotes", asistencias: "Asistencias", recuperaciones: "Robos", perdidas: "Pérdidas", valoracion: "Valoración", minutos: "Minutos", tc_pct: "% tiro de campo" };
+  const mets = (a.metricas || []).slice(0, 3); if (!mets.length || mets.some((k) => !VALIDAS[k])) return { error: `Métricas válidas: ${Object.keys(VALIDAS).join(", ")}` };
+  const q = slug(a.jugador), eq = a.equipo ? slug(a.equipo) : null; const cand = [];
+  for (const [g, p] of await todosPayloads()) {
+    if (a.db && stem(g.db) !== stem(a.db)) continue;
+    const vistos = new Set(); for (const s of p.partidosJugador || []) if (slug(s.jugador).includes(q) && (!eq || slug(s.equipo).includes(eq))) vistos.add(`${s.jugador}\x01${s.equipo}`);
+    for (const k of vistos) cand.push([g, p, ...k.split("\x01")]);
+  }
+  if (!cand.length) return { error: "No hay partidos de ese jugador." };
+  const dist = [...new Set(cand.map((c) => `${c[2]} (${c[3]})`))]; if (dist.length > 1) return { error: "Varios jugadores coinciden; precisa nombre o equipo.", candidatos: dist.slice(0, 8) };
+  const [g, p, jug, equipo] = cand[0]; const ms = new Map((p.partidos || []).map((m) => [m.partido_id, m]));
+  const filas = (p.partidosJugador || []).filter((s) => s.jugador === jug && s.equipo === equipo).map((s) => ({ s, f: ms.get(s.partido_id)?.fecha || "" })).sort((x, y) => x.f.localeCompare(y.f));
+  const etiquetas = filas.map(({ f }) => (f.length >= 10 ? `${f.slice(8, 10)}/${f.slice(5, 7)}` : ""));
+  const series = mets.map((k) => ({ nombre: VALIDAS[k], valores: filas.map(({ s }) => k === "minutos" ? redondea(minF(s.minutos), 10) : k === "tc_pct" ? (s.tc_intentos > 0 ? redondea((s.tc_aciertos / s.tc_intentos) * 100, 10) : 0) : s[k] ?? 0) }));
+  return conGrafico({ tipo: "lineas", titulo: `${jug} — evolución`, subtitulo: `${equipo} · ${etiquetaGrupo(g)}`, etiquetas, series }, { jugador: jug, equipo, grupo: etiquetaGrupo(g), partidos: filas.length, series });
+}
+
+async function graficoTiros(a) {
+  const qj = a.jugador ? slug(a.jugador) : null, qe = a.equipo ? slug(a.equipo) : null; if (!qj && !qe) return { error: "Indica jugador y/o equipo." };
+  const pts = [], quienes = new Set(); let grupo = "";
+  for (const [g, p] of await todosPayloads()) {
+    if (a.db && stem(g.db) !== stem(a.db)) continue; const antes = pts.length;
+    for (const t of p.tiros || []) if ((!qj || slug(t.jugador).includes(qj)) && (!qe || slug(t.equipo).includes(qe)) && (a.cuarto == null || t.cuarto === a.cuarto)) { quienes.add(qj ? `${t.jugador} (${t.equipo})` : t.equipo); pts.push([t.Xinv, t.Yinv, t.resultado === "acierto" ? 1 : 0]); }
+    if (pts.length > antes && !grupo) grupo = etiquetaGrupo(g); if (pts.length && !a.db) break;
+  }
+  if (!pts.length) return { error: "No hay tiros que coincidan." }; if (quienes.size > 1) return { error: "Varios coinciden; precisa nombre o equipo.", candidatos: [...quienes].slice(0, 8) };
+  const z = ZONAS.map(() => [0, 0]); for (const [x, y, m] of pts) { const k = zona(x, y); z[k][0]++; z[k][1] += m; }
+  const paso = Math.floor(pts.length / 1500) + 1; const tiros = pts.filter((_, i) => i % paso === 0).map(([x, y, m]) => [redondea(x), redondea(y), m]);
+  return conGrafico({ tipo: "mapa_tiros", titulo: `${[...quienes][0]} — mapa de tiros${a.cuarto != null ? ` (${a.cuarto}.º cuarto)` : ""}`, subtitulo: grupo, tiros }, { tiros: pts.length, aciertos: pts.reduce((s, p) => s + p[2], 0), zonas: ZONAS.map((n, i) => ({ zona: n, intentos: z[i][0], aciertos: z[i][1] })) });
+}
+
+function crearGrafico(a) {
+  if (!["barras", "lineas", "dispersion"].includes(a.tipo)) return { error: "tipo debe ser barras, lineas o dispersion" };
+  const spec = { ...a }; for (const k of ["items", "puntos"]) if (Array.isArray(spec[k])) spec[k] = spec[k].slice(0, 40);
+  return conGrafico(spec, "ok");
+}
+
 async function ejecutar(nombre, a) {
+  if (nombre === "grafico_ranking") return graficoRanking(a); if (nombre === "grafico_evolucion") return graficoEvolucion(a);
+  if (nombre === "grafico_tiros") return graficoTiros(a); if (nombre === "crear_grafico") return crearGrafico(a);
   const q = (s) => slug(s || ""); const sel = [];
   for (const [g, p] of await todosPayloads()) if (!a.db || stem(g.db) === stem(a.db)) sel.push([g, p]);
   if (nombre === "listar_datos") return { grupos: (await listarGrupos()).map((g) => ({ db: g.db, competicion: g.competicion, grupo: g.grupo, temporada: g.temporada, partidos: g.partidos })) };
@@ -213,10 +279,11 @@ async function preguntar({ chatId, texto, contexto, breve }) {
     const hist = (await porChat(chatId)).sort((a, b) => a.id - b.id).slice(-10);
     if (!hist.length) { const c = await get("chats", chatId); if (c) await put("chats", { ...c, titulo: texto.slice(0, 48) }); }
     await put("mensajes", { chat_id: chatId, rol: "user", contenido: texto, creado: new Date().toISOString() });
-    let sis = SISTEMA; if (breve) sis += " MODO PARTIDO: el entrenador está en pleno partido; responde en MÁXIMO 3 frases cortas o 4 viñetas, lo más accionable primero.";
+    let sis = SISTEMA; if ((cfg.instrucciones || "").trim()) sis += `\n\nPERFIL E INSTRUCCIONES DEL ENTRENADOR (síguelas; prevalecen sobre tu estilo por defecto, pero nunca inventes datos):\n${cfg.instrucciones.trim()}`;
+    if (breve) sis += " MODO PARTIDO: el entrenador está en pleno partido; responde en MÁXIMO 3 frases cortas o 4 viñetas, lo más accionable primero.";
     if (contexto && Object.keys(contexto).length) sis += ` Contexto actual del entrenador en la aplicación: ${JSON.stringify(contexto)}.`;
     const msgs = [{ role: "system", content: sis }, ...hist.map((m) => ({ role: m.rol, content: m.contenido })), { role: "user", content: texto }];
-    let respuesta = "";
+    let respuesta = ""; const graficos = [];
     for (let i = 0; i < 7; i++) {
       const [contenido, llamadas] = await ronda(cfg, msgs, chatId);
       if (!llamadas.length) { respuesta = contenido; break; }
@@ -225,11 +292,13 @@ async function preguntar({ chatId, texto, contexto, breve }) {
         let args = {}; try { args = JSON.parse(l.args || "{}"); } catch { /* argumentos vacíos */ }
         emitir("ia", { chat_id: chatId, tipo: "herramienta", texto: `${l.name} ${l.args.slice(0, 120)}` });
         let res; try { res = await ejecutar(l.name, args); } catch (e) { res = { error: String(e) }; }
+        if (res && res.__grafico) { graficos.push(res.__grafico); res = { ok: true, mensaje: "Gráfico mostrado al usuario justo debajo de tu respuesta. NO lo dibujes con texto; comenta lo importante.", resumen: res.resumen }; }
         let s = JSON.stringify(res); if (s.length > 24000) s = s.slice(0, 24000) + "…(recortado)";
         msgs.push({ role: "tool", tool_call_id: l.id, content: s });
       }
     }
     if (!respuesta) respuesta = "No he podido completar la consulta. Prueba a reformular la pregunta.";
+    for (const g of graficos) respuesta += "\n\n```feb-grafico\n" + JSON.stringify(g) + "\n```";
     await put("mensajes", { chat_id: chatId, rol: "assistant", contenido: respuesta, creado: new Date().toISOString() });
     emitir("ia", { chat_id: chatId, tipo: "fin", texto: respuesta });
     return respuesta;
@@ -247,8 +316,8 @@ const ordenes = {
   borrar_chat: async ({ id }) => { for (const m of await porChat(id)) await del("mensajes", m.id); await del("chats", id); return null; },
   listar_mensajes: async ({ chatId }) => (await porChat(chatId)).sort((a, b) => a.id - b.id).map((m) => ({ rol: m.rol, contenido: m.contenido })),
   preguntar_ia: preguntar,
-  leer_ajustes_ia: async () => { const c = cfgIA(); return { base_url: c.base_url, modelo: c.modelo, tiene_clave: !!c.api_key }; },
-  guardar_ajustes_ia: async ({ baseUrl, modelo, apiKey }) => { const c = cfgIA(); guardarCfgIA({ base_url: String(baseUrl || c.base_url).trim(), modelo: String(modelo || c.modelo).trim(), api_key: apiKey && apiKey.trim() ? apiKey.trim() : c.api_key }); return null; },
+  leer_ajustes_ia: async () => { const c = cfgIA(); return { base_url: c.base_url, modelo: c.modelo, tiene_clave: !!c.api_key, instrucciones: c.instrucciones }; },
+  guardar_ajustes_ia: async ({ baseUrl, modelo, apiKey, instrucciones }) => { const c = cfgIA(); guardarCfgIA({ base_url: String(baseUrl || c.base_url).trim(), modelo: String(modelo || c.modelo).trim(), api_key: apiKey && apiKey.trim() ? apiKey.trim() : c.api_key, instrucciones: instrucciones == null ? c.instrucciones : String(instrucciones).slice(0, 4000) }); return null; },
   elegir_modelo_ia: async ({ modelo }) => { guardarCfgIA({ ...cfgIA(), modelo: String(modelo).trim() }); return null; },
   listar_modelos_ia: async ({ baseUrl, apiKey } = {}) => {
     const c = cfgIA(); const base = (baseUrl || c.base_url).replace(/\/$/, ""); const k = apiKey || c.api_key;

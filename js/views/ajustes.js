@@ -13,7 +13,8 @@ export async function vistaAjustes(root) {
   const q = new URLSearchParams((location.hash.split("?")[1] || ""));
   const tab = TABS.some(([t]) => t === q.get("tab")) ? q.get("tab") : "datos";
   const cont = h("div", { class: "aj-cont" });
-  root.replaceChildren(h("div", { class: "titulo" }, h("h1", { text: "Ajustes" })),
+  let version = ""; try { version = window.__TAURI__?.app ? "v" + (await window.__TAURI__.app.getVersion()) : ""; } catch { /* sin versión */ }
+  root.replaceChildren(h("div", { class: "titulo" }, h("h1", { text: "Ajustes" }), version ? h("p", { text: `FEB Stats ${version}` }) : null),
     tabsBar(TABS, tab, (v) => { location.hash = `#/ajustes?tab=${v}`; }), cont);
   if (tab === "datos") await (enLocal ? panelImportar(cont) : vistaDatos(cont));
   else if (tab === "ia") await panelIA(cont);
