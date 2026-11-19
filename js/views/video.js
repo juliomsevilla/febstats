@@ -75,6 +75,9 @@ function pintar(root) {
     V.video ? panelPartido(root) : null);
   if (!V.video) { root.replaceChildren(cab, vacioMsg("Sin vídeos", "Pulsa «Abrir vídeo…» y elige un archivo mp4.")); return; }
 
+  const faltaAviso = V.video.existe === false ? h("div", { class: "vid-falta" }, h("span", { text: `No encuentro el archivo de este vídeo (${V.video.ruta}). Tus marcas y vínculos se conservan.` }),
+    h("button", { type: "button", class: "btn", onclick: async () => { const r = await elegirVideo(); if (!r) return; try { await invoke("relocalizar_video", { id: V.video.id, ruta: r }); await vistaVideo(root); } catch (e) { decirGlobal(String(e)); } } }, "Localizar archivo…")) : null;
+  const decirGlobal = (t) => { V.aviso = t; };
   const vid = h("video", { class: "vid", controls: true, preload: "metadata", crossorigin: "anonymous", src: urlVideo(V.video), playsinline: true });
   const tl = h("div", { class: "vid-tl", title: "Línea de tiempo" });
   const tabla = h("tbody");
@@ -219,7 +222,7 @@ function pintar(root) {
 
   root.replaceChildren(cab,
     h("div", { class: "vid-main" },
-      h("div", { class: "vid-izq" }, vid, tl, barraReloj, aviso,
+      h("div", { class: "vid-izq" }, faltaAviso, vid, tl, barraReloj, aviso,
         h("p", { class: "vid-ayuda", text: "Espacio: pausa · ←/→: ±3 s (Mayús ±10 s) · atajo de cada botón · C: captura" })),
       panelBotones),
     h("div", { class: "card vid-reg" }, h("div", { class: "vid-der-cab" }, cuenta, filtro),

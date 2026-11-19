@@ -438,3 +438,8 @@ html { -webkit-text-size-adjust: 100%; } button, select, a, summary { touch-acti
 .md a.md-cap { color: var(--acento-texto); font-weight: 600; text-decoration: underline; }
 .md-tabla { overflow-x: auto; margin: 8px 0 14px; } .md-tabla table { border-collapse: collapse; font-size: 13px; width: 100%; } .md-tabla th, .md-tabla td { border: 1px solid var(--borde); padding: 6px 9px; text-align: left; vertical-align: top; } .md-tabla th { background: var(--panel-2); }
 .ayu-autoria { max-width: 70ch; } .ayu-dl { display: grid; grid-template-columns: 110px 1fr; gap: 8px 14px; margin: 14px 0; } .ayu-dl dt { color: var(--suave); font-weight: 600; } .ayu-dl dd { margin: 0; }
+
+.aviso-datos { position: sticky; top: 0; z-index: 50; padding: 8px 14px; background: #fff3cd; color: #5c4400; border-bottom: 1px solid #e6c65c; font-size: 13px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.aviso-datos a { color: inherit; font-weight: 700; } .aviso-datos .btn { margin-left: auto; height: 24px; color: inherit; }
+.cop-fila { display: grid; grid-template-columns: 1.4fr 1fr auto; gap: 8px; align-items: center; padding: 6px 0; border-top: 1px solid var(--borde); font-size: 13px; }
+.vid-falta { margin: 6px 0; padding: 8px 10px; border: 1px solid #e6c65c; background: #fff3cd; color: #5c4400; border-radius: 8px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }

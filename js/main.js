@@ -8,7 +8,7 @@ import { vistaTiros } from "./views/tiros.js";
 import { vistaVideo } from "./views/video.js";
 import { vistaAjustes } from "./views/ajustes.js";
 import { vistaIA } from "./views/ia.js";
-import { enEscritorio, enLocal, conVideo, invoke } from "./api.js";
+import { enEscritorio, enLocal, conVideo, invoke, MODO } from "./api.js";
 import { vistaConsulta } from "./views/consulta.js";
 import { activarExportacion } from "./exportar-auto.js";
 
@@ -152,5 +152,12 @@ async function render() {
   }
 }
 activarExportacion();
+// Aviso persistente (solo app del Mac): carpeta de datos no disponible, datos de una versión más nueva, configuración recuperada…
+if (MODO === "nativo") invoke("estado_datos").then((d) => {
+  if (!d?.aviso) return;
+  const b = h("div", { class: "aviso-datos", role: "alert" }, h("b", { text: "⚠ Tus datos: " }), d.aviso, " ", h("a", { href: "#/ajustes?tab=carpetas" }, "Ver Ajustes → Carpetas"),
+    h("button", { type: "button", class: "btn fantasma", "aria-label": "Ocultar aviso", onclick: () => b.remove() }, "✕"));
+  document.body.prepend(b);
+}).catch(() => {});
 window.addEventListener("hashchange", render);
 render();

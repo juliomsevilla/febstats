@@ -8,7 +8,7 @@ import { importarPaquetes } from "../local.js";
 import { panelAyuda, panelAutoria, panelLicencia } from "./info.js";
 
 const INFO = ["ayuda", "autoria", "licencia"]; // en todas las versiones (también en el iPad)
-const TABS = [["datos", enLocal ? "Datos" : "Descarga de datos"], ["ia", "IA"], ["botones", "Botones de vídeo"], ["carpetas", "Carpetas"], ["ipad", "Acceso por red"], ["ayuda", "Ayuda"], ["autoria", "Autoría"], ["licencia", "Licencia"]]
+const TABS = [["datos", enLocal ? "Datos" : "Descarga de datos"], ["carpetas", "Carpetas"], ["ia", "IA"], ["botones", "Botones de vídeo"], ["ipad", "Acceso por red"], ["ayuda", "Ayuda"], ["autoria", "Autoría"], ["licencia", "Licencia"]]
   .filter(([t]) => INFO.includes(t) || (enLocal ? (t === "datos" || t === "ia") : enRemoto ? (t === "datos" || t === "botones") : true));
 
 export async function vistaAjustes(root) {
@@ -35,7 +35,7 @@ async function panelCarpetas(cont) {
   let mover = true;
   const cambiar = async (clave, ruta) => { msg.textContent = "Guardando…"; try { msg.textContent = await invoke("guardar_ruta", { clave, ruta, mover }); } catch (e) { msg.textContent = String(e); } await panelCarpetas(cont); cont.append(msg); };
   cont.replaceChildren(
-    h("p", { class: "vid-ayuda", text: "Elige dónde se guarda cada tipo de archivo (por ejemplo en un disco externo o una carpeta compartida). Los cambios se aplican al momento." }),
+    h("p", { class: "vid-ayuda", text: "Por defecto todo vive en la carpeta de FEBstats, dentro de Documentos. Puedes cambiar dónde se guarda cada una de estas cuatro carpetas (por ejemplo, a un disco externo), pero hacerlo es bajo tu responsabilidad: si esa ubicación deja de estar disponible, FEBstats te avisará y trabajará con una carpeta vacía hasta que la recuperes." }),
     h("label", { class: "ia-breve" }, h("input", { type: "checkbox", checked: true, onchange: (e) => { mover = e.target.checked; } }), " Al cambiar una carpeta, mover a la nueva lo que ya haya guardado"),
     h("div", { class: "rut-lista" }, r.rutas.map((x) => h("div", { class: "card rut-fila" },
       h("div", { class: "rut-tit" }, h("b", { text: x.etiqueta }), x.personalizada ? h("span", { class: "vid-chip-s", text: "personalizada" }) : h("span", { class: "vid-chip-s", text: "por defecto" })),
@@ -43,9 +43,29 @@ async function panelCarpetas(cont) {
       h("div", { class: "vid-herr" },
         h("button", { type: "button", class: "btn", onclick: async () => { const n = await elegirCarpeta(x.ruta); if (n) cambiar(x.clave, n); } }, "Cambiar…"),
         x.personalizada ? h("button", { type: "button", class: "btn fantasma", onclick: () => cambiar(x.clave, null) }, "Restablecer") : null)))),
-    h("p", { class: "vid-ayuda", text: `Carpeta base de la aplicación (contiene config.json con estos ajustes y la clave de IA): ${r.base}` }), msg);
+    h("p", { class: "vid-ayuda", text: `Carpeta de FEBstats: ${r.base}. Es siempre la misma (se crea la primera vez y, al actualizar la app, se reutiliza con todo lo que contiene). Dentro están data, capturas, videos y bin, más copias (copias de seguridad) y config.json (ajustes y clave de IA).` }), msg,
+    await tarjetaCopias(cont));
 }
 
+
+// Copias de seguridad de las anotaciones (vídeos, marcas, botones, chats): carpeta segura fuera de la app.
+async function tarjetaCopias(cont) {
+  const [copias, est] = [await invoke("listar_copias"), await invoke("estado_datos")];
+  const msg = h("p", { class: "vid-ayuda" });
+  const fecha = (n) => { const m = n.match(/usuario-(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})/); return m ? `${m[3]}/${m[2]}/${m[1]} ${m[4]}:${m[5]} UTC` : n; };
+  const motivo = { auto: "automática", manual: "manual", "antes-de-actualizar": "antes de actualizar", "antes-de-restaurar": "antes de restaurar" };
+  const nueva = async () => { try { msg.textContent = await invoke("crear_copia"); await panelCarpetas(cont); } catch (e) { msg.textContent = String(e); } };
+  const restaurar = async (c) => {
+    if (restaurar._pend !== c.ruta) { restaurar._pend = c.ruta; msg.textContent = `Pulsa «Restaurar» otra vez para volver a la copia del ${fecha(c.nombre)} (${c.videos} vídeos, ${c.marcas} marcas). Antes se guardará una copia de lo actual.`; return; }
+    restaurar._pend = null; try { msg.textContent = await invoke("restaurar_copia", { ruta: c.ruta }); } catch (e) { msg.textContent = String(e); }
+  };
+  return h("div", { class: "card", style: { marginTop: "14px" } }, h("h2", { text: "Copias de seguridad de tus anotaciones" }),
+    h("p", { class: "vid-ayuda", text: `Se guardan solas (al actualizar, antes de restaurar y cada pocas horas de uso) en la carpeta «copias» de FEBstats, fuera de la aplicación, así que no se borra al desinstalarla: ${est.carpeta_segura ? est.carpeta_segura + "/copias" : "no disponible"}. Incluyen vídeos, vínculos, marcas, botones y chats.` }),
+    h("div", { class: "vid-herr" }, h("button", { type: "button", class: "btn primario", onclick: nueva }, "Crear copia ahora")),
+    copias.length ? h("div", null, copias.slice(0, 15).map((c) => h("div", { class: "cop-fila" }, h("span", { text: `${fecha(c.nombre)} · ${motivo[c.motivo.replace(/-\d+$/, "")] || c.motivo}` }), h("span", { class: "vid-ayuda", text: `${c.videos} vídeos · ${c.marcas} marcas` }),
+      h("button", { type: "button", class: "btn", onclick: () => restaurar(c) }, "Restaurar")))) : h("p", { class: "vid-ayuda", text: "Aún no hay copias." }),
+    h("p", { class: "vid-ayuda", text: `Esquema de datos ${est.esquema} · compilación ${est.compilacion}` }), msg);
+}
 // Acceso desde el iPad: el Mac sirve la app por la red local, protegida con PIN.
 async function panelRemoto(cont) {
   const r = await invoke("leer_remoto");
