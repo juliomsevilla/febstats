@@ -10,6 +10,10 @@ import { vistaAjustes } from "./views/ajustes.js";
 import { vistaIA } from "./views/ia.js";
 import { enEscritorio, enLocal, conVideo, invoke, MODO } from "./api.js";
 import { vistaConsulta } from "./views/consulta.js";
+import { vistaNotas } from "./views/notas.js";
+import { vistaPlaybook } from "./views/jugadas.js";
+import { chipRelacionado } from "./views/relacionado.js";
+import { contextoActual } from "./views/vinculo.js";
 import { activarExportacion } from "./exportar-auto.js";
 
 const VISTAS = [
@@ -19,10 +23,16 @@ const VISTAS = [
 if (enEscritorio) {
   VISTAS.unshift(["consulta", "Consulta", vistaConsulta]);        // buscador rápido para el banquillo
   if (conVideo) VISTAS.push(["video", "Vídeo", vistaVideo]);      // el iPad no gestiona vídeo ni capturas
+  VISTAS.push(["playbook", "Playbook", vistaPlaybook]);                 // diseñador de jugadas (en el iPad, solo visor)
+  VISTAS.push(["notas", "Notas", vistaNotas]);                  // notas Markdown (en el iPad, solo lectura)
   VISTAS.push(["ia", "Asistente", vistaIA], ["ajustes", "Ajustes", vistaAjustes]);
 }
 if (enLocal && !location.hash) location.hash = "#/consulta"; // en el iPad se abre directamente el buscador
-if (enLocal && "serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => {}); // uso sin conexión
+if (enLocal && "serviceWorker" in navigator && location.protocol === "https:") { // uso sin conexión
+  const habia = navigator.serviceWorker.controller; // si ya había uno y llega una versión nueva de la app, se recarga para usarla (si no, se vería la antigua hasta la siguiente apertura)
+  navigator.serviceWorker.addEventListener("controllerchange", () => { if (habia) location.reload(); });
+  navigator.serviceWorker.register("sw.js").catch(() => {});
+}
 // Marca: escudo con degradado naranja-rojo y un balón con costuras, en guiño (no copia) al escudo de la FEB.
 const ESCUDO = "M16 1.5C8.6 1.5 3.5 5.6 3.5 12.4v8.2c0 6.2 5.6 10.6 12.5 14 6.9-3.4 12.5-7.8 12.5-14v-8.2C28.5 5.6 23.4 1.5 16 1.5Z";
 function logo() {
@@ -110,6 +120,8 @@ function pintarTop(f) {
       selector("f-ju", "Jugador", [["", "Todos"], ...jugadores], f.ju, (v) => ir({ f: { ju: v } })),
       selector("f-pa", "Partido", [["", "Todos"], ...partidos], f.pa, (v) => ir({ f: { pa: v } })),
       hay ? h("button", { type: "button", class: "btn fantasma", onclick: () => ir({ f: { eq: "", ju: "", pa: "" } }) }, "Quitar filtros") : null));
+  // «Relacionado»: notas, jugadas y vídeos enlazados con el equipo, jugador o partido en foco (solo si hay algo)
+  if (enEscritorio && hay) chipRelacionado(contextoActual(), "Relacionado con lo que tienes filtrado").then((c) => { if (c && top.isConnected) top.querySelector(".filtros")?.append(c); }).catch(() => {});
 }
 
 // ---------- enrutado ----------
@@ -119,8 +131,9 @@ async function render() {
   const yo = ++cargando;
   const hash = leerHash();
   const main = $("vista");
+  main.classList.toggle("ancho", hash.view === "notas" || hash.view === "playbook" || hash.view === "video"); // estas pantallas usan todo el ancho de la ventana
   try {
-    if (["consulta", "video", "ajustes", "ia"].includes(hash.view) && VISTAS.some((x) => x[0] === hash.view)) { // no dependen de ningún grupo de datos FEB
+    if (["consulta", "video", "ajustes", "ia", "notas", "playbook"].includes(hash.view) && VISTAS.some((x) => x[0] === hash.view)) { // no dependen de ningún grupo de datos FEB
       const v = VISTAS.find((x) => x[0] === hash.view);
       document.title = `${v[1]} · FEBstats`; pintarNav(v[0], hash.db || ""); $("top").replaceChildren(); $("top").style.display = "none";
       await v[2](main); S._previa = v[0]; return;

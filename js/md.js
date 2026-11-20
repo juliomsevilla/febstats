@@ -2,7 +2,9 @@
 // código, reglas y enlaces internos `[texto](#cap:id)`. Con { blando: true } las líneas de un párrafo se unen (para textos largos).
 export function md(txt, { blando = false } = {}) {
   const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  const enlace = (s) => s.replace(/\[([^\]]+)\]\(#cap:([\w-]+)\)/g, (_, t, id) => `<a href="#" class="md-cap" data-cap="${id}">${t}</a>`).replace(/\[([^\]]+)\]\((?:https?:|mailto:)[^)]*\)/g, "$1");
+  const enlace = (s) => s.replace(/!\[([^\]]*)\]\((imagenes\/[^)\s]+)\)/g, (_, alt, src) => `<img src="${src}" alt="${alt}">`) // imágenes de las notas (solo las propias)
+    .replace(/\[\[([^\]\n|]+)(?:\|([^\]\n]+))?\]\]/g, (_, n, t) => `<a href="#wiki=${encodeURIComponent(n.trim()).replace(/\(/g, "%28").replace(/\)/g, "%29")}" class="wiki">${(t || n).trim()}</a>`) // enlaces [[nota]] y [[jugada:12|texto]]
+    .replace(/\[([^\]]+)\]\(#cap:([\w-]+)\)/g, (_, t, id) => `<a href="#" class="md-cap" data-cap="${id}">${t}</a>`).replace(/\[([^\]]+)\]\((?:https?:|mailto:)[^)]*\)/g, "$1");
   const inline = (s) => enlace(esc(s).replace(/`([^`]+)`/g, "<code>$1</code>").replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/(^|[^*])\*([^*\s][^*]*?)\*(?!\*)/g, "$1<i>$2</i>").replace(/__(.+?)__/g, "<b>$1</b>"));
   const celdas = (l) => l.trim().replace(/^\|/, "").replace(/\|$/, "").split(/(?<!\\)\|/).map((c) => c.trim().replace(/\\\|/g, "|"));
   const esSep = (l) => /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/.test(l);

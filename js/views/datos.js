@@ -117,18 +117,19 @@ function pintar(root) {
 }
 
 // «Llevar los datos al iPad»: genera un único archivo con los grupos elegidos, que se importa en el iPad (Ajustes → Datos).
-let _sel = null;
+let _sel = null, _conImg = false;
 function exportar(root) {
   _sel ||= new Set(S.grupos.map((g) => g.db));
   const msg = h("p", { class: "vid-ayuda" });
   const hacer = async () => {
     const ruta = await window.__TAURI__.dialog.save({ defaultPath: "FEBstats-iPad.json", filters: [{ name: "Datos para la app del iPad", extensions: ["json"] }, { name: "Archivo único HTML (experimental)", extensions: ["html"] }] });
     if (!ruta) return; msg.textContent = "Generando…";
-    try { msg.textContent = await invoke("exportar_paquete", { ruta, dbs: [..._sel] }); } catch (e) { msg.textContent = String(e); }
+    try { msg.textContent = await invoke("exportar_paquete", { ruta, dbs: [..._sel], conImagenes: _conImg }); } catch (e) { msg.textContent = String(e); }
   };
   return h("div", { class: "card" }, h("h2", { text: "Llevar los datos al iPad" }),
     h("p", { class: "vid-ayuda", text: "Genera un archivo con los datos que elijas. Pásalo al iPad por AirDrop o cable e impórtalo en la app instalada en el iPad (Ajustes → Datos). La app del iPad se instala una sola vez desde https://juliomsevilla.github.io/febstats/ (Safari → Compartir → Añadir a pantalla de inicio). La opción «.html» (app y datos en un solo archivo) es experimental." }),
     h("div", { class: "con-lista" }, S.grupos.map((g) => h("label", { class: "ia-breve" }, h("input", { type: "checkbox", checked: _sel.has(g.db) || null, onchange: (e) => { e.target.checked ? _sel.add(g.db) : _sel.delete(g.db); } }), ` ${g.temporada} · ${g.competicion} ${String(g.grupo).replace(/"/g, "")}`))),
+    h("label", { class: "ia-breve", title: "Las notas y las jugadas siempre viajan (solo lectura en el iPad). Las imágenes pueden hacer el archivo mucho más grande." }, h("input", { type: "checkbox", checked: _conImg || null, onchange: (e) => { _conImg = e.target.checked; } }), " Incluir también las imágenes de las notas (el archivo pesa más)"),
     h("div", { class: "vid-herr" }, h("button", { type: "button", class: "btn primario", onclick: hacer }, "Exportar datos para iPad…")), msg);
 }
 

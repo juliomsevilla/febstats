@@ -24,7 +24,7 @@ export async function vistaIA(root) {
   await escuchar(root);
   A.chats = await invoke("listar_chats");
   A.grupos = await invoke("listar_grupos");
-  const aj = await invoke("leer_ajustes_ia"); A.modelo = aj.modelo;
+  const aj = await invoke("leer_ajustes_ia"); A.modelo = aj.modelo; if (A.proveedor !== aj.proveedor) { A.proveedor = aj.proveedor; A.modelos = []; } A.nombreProveedor = aj.proveedores?.[aj.proveedor]?.nombre || ""; A.proveedores = aj.proveedores;
   if (aj.tiene_clave && !A.modelos.length) invoke("listar_modelos_ia", {}).then((m) => { A.modelos = m; if (document.querySelector(".ia-root")) pintar(root); }).catch(() => {});
   if (!A.chat || !A.chats.some((c) => c.id === A.chat)) A.chat = A.chats[0]?.id ?? null;
   A.mensajes = A.chat ? await invoke("listar_mensajes", { chatId: A.chat }) : [];
@@ -67,20 +67,31 @@ function burbujas() {
 
 export async function panelIA(cont) {
   const a = await invoke("leer_ajustes_ia");
-  const url = h("input", { type: "text", value: a.base_url });
-  const clave = h("input", { type: "password", placeholder: a.tiene_clave ? "•••••• (guardada; déjalo vacío para conservarla)" : "Pega aquí tu clave de API" });
+  const provs = a.proveedores || {};                 // {deepseek:{nombre, base_url, modelo, tiene_clave}, openrouter:{…}}
+  let prov = a.proveedor;
+  const st = Object.fromEntries(Object.entries(provs).map(([id, p]) => [id, { clave: "", modelo: p.modelo, lista: [] }]));
+  const AYUDA = {
+    deepseek: "DeepSeek (platform.deepseek.com → API keys). Modelos habituales: deepseek-chat (rápido, ideal para el partido) y deepseek-reasoner.",
+    openrouter: "OpenRouter (openrouter.ai/keys): una sola clave para muchos modelos de distintas empresas. El modelo se escribe como proveedor/modelo (p. ej. openai/gpt-4o-mini, anthropic/claude-sonnet-5.5, google/gemini-2.5-flash). Si sale «No allowed providers…», amplía los proveedores permitidos en openrouter.ai/settings/privacy. Para el asistente conviene un modelo con soporte de herramientas (tool calling).",
+  };
+  const clave = h("input", { type: "password", autocomplete: "off" });
+  const ayuda = h("p", { class: "vid-ayuda" }); const urlTxt = h("code", { class: "rut-ruta" });
   const msg = h("p", { class: "vid-ayuda" });
-  const cajaModelo = h("div", { class: "ia-modelo" });
-  let modelo = a.modelo, lista = A.modelos;
-  const manual = h("input", { type: "text", value: modelo, placeholder: "p. ej. deepseek-chat", oninput: (e) => { modelo = e.target.value; } });
-  const pintarModelo = () => {
-    const sel = lista.length ? h("select", { onchange: (e) => { modelo = e.target.value; manual.value = modelo; } },
-      (lista.includes(modelo) ? lista : [modelo, ...lista]).filter(Boolean).map((m) => h("option", { value: m, selected: m === modelo || null, text: m }))) : null;
-    cajaModelo.replaceChildren(...[sel, manual].filter(Boolean));
+  const lista = h("datalist", { id: "ia-modelos" });
+  const modeloIn = h("input", { type: "text", list: "ia-modelos", autocomplete: "off", spellcheck: "false", oninput: (e) => { st[prov].modelo = e.target.value; } });
+  const segmento = h("div", { class: "seg", role: "radiogroup", "aria-label": "Servicio de IA" });
+  const pintarProveedor = () => {
+    const p = provs[prov], s = st[prov];
+    segmento.replaceChildren(...Object.entries(provs).map(([id, x]) => h("button", { type: "button", role: "radio", "aria-checked": String(id === prov), class: id === prov ? "on" : "",
+      onclick: () => { st[prov].clave = clave.value; prov = id; pintarProveedor(); } }, x.nombre + (x.tiene_clave || st[id].clave ? " ✓" : ""))));
+    urlTxt.textContent = p.base_url; ayuda.textContent = AYUDA[prov] || "";
+    clave.value = s.clave; clave.placeholder = p.tiene_clave ? "•••••• (guardada; déjalo vacío para conservarla)" : `Pega aquí tu clave de ${p.nombre}`;
+    modeloIn.value = s.modelo; modeloIn.placeholder = prov === "openrouter" ? "p. ej. openai/gpt-4o-mini" : "p. ej. deepseek-chat";
+    lista.replaceChildren(...s.lista.map((m) => h("option", { value: m })));
   };
   const cargar = async () => {
-    msg.textContent = "Consultando modelos…";
-    try { lista = await invoke("listar_modelos_ia", { baseUrl: url.value, apiKey: clave.value || null }); A.modelos = lista; if (!modelo || !lista.includes(modelo)) { modelo = lista.includes("deepseek-chat") ? "deepseek-chat" : lista[0]; manual.value = modelo; } msg.textContent = `${lista.length} modelos disponibles.`; pintarModelo(); }
+    msg.textContent = "Consultando modelos…"; st[prov].clave = clave.value;
+    try { const l = await invoke("listar_modelos_ia", { proveedor: prov, apiKey: clave.value || null }); st[prov].lista = l; pintarProveedor(); msg.textContent = `${l.length} modelos disponibles: escribe en el cuadro para filtrar o despliega la lista.`; }
     catch (e) { msg.textContent = String(e); }
   };
   const PERFILES = [
@@ -90,20 +101,48 @@ export async function panelIA(cont) {
     ["Formador de jugadores", "Actúa como entrenador de formación. Evalúa a los jugadores con foco en su desarrollo: qué hacen bien, qué deben mejorar y 2-3 ejercicios o hábitos concretos para trabajarlo. Tono positivo y exigente."],
   ];
   const instr = h("textarea", { rows: 7, placeholder: "Opcional. Escribe cómo quieres que se comporte el asistente (rol, estilo, qué priorizar, formato de las respuestas…)." }, a.instrucciones || "");
-  const guardar = async () => { await invoke("guardar_ajustes_ia", { baseUrl: url.value, modelo, apiKey: clave.value || null, instrucciones: instr.value }); clave.value = ""; A.modelo = modelo; };
-  pintarModelo();
+  const guardar = async () => {
+    st[prov].clave = clave.value;
+    await invoke("guardar_ajustes_ia", { proveedor: prov, modelos: Object.fromEntries(Object.entries(st).map(([id, x]) => [id, x.modelo])), claves: Object.fromEntries(Object.entries(st).map(([id, x]) => [id, x.clave])), instrucciones: instr.value });
+    for (const [id, p] of Object.entries(provs)) { if (st[id].clave) p.tiene_clave = true; p.modelo = st[id].modelo; }
+    for (const x of Object.values(st)) x.clave = ""; clave.value = ""; pintarProveedor();
+    A.modelo = st[prov].modelo; A.modelos = []; A.proveedor = prov;
+  };
+  pintarProveedor();
   cont.replaceChildren(h("div", { class: "ia-ajustes" },
-    h("p", { class: "vid-ayuda", text: "Por defecto DeepSeek (platform.deepseek.com). Sirve cualquier servicio compatible con la API de OpenAI. La clave se guarda solo en este ordenador (carpeta de datos); no la compartas junto con la carpeta." }),
-    h("label", null, "URL del servicio", url), h("label", null, "Clave de API", clave),
+    h("p", { class: "vid-ayuda", text: "Elige el servicio de IA. Cada uno guarda su propia clave y su modelo; el que marques es el que usa el asistente. Las claves se guardan solo en este ordenador (carpeta de datos); no las compartes con el archivo para el iPad." }),
+    h("div", { class: "campo" }, h("label", { text: "Servicio" }), segmento, h("small", null, "Dirección: ", urlTxt)), ayuda,
+    h("label", null, "Clave de API", clave),
     h("label", null, "Perfil del asistente (su rol e instrucciones)", instr),
     h("div", { class: "vid-herr" }, ...PERFILES.map(([n, t]) => h("button", { type: "button", class: "btn", onclick: () => { instr.value = t; } }, n)), h("button", { type: "button", class: "btn fantasma", onclick: () => { instr.value = ""; } }, "Quitar perfil")),
     h("p", { class: "vid-ayuda", text: "Elige un perfil de ejemplo y edítalo, o escribe el tuyo. Se aplica a todas las conversaciones (las nuevas y las ya abiertas) y se guarda en este dispositivo." }),
-    h("div", { class: "ia-fila" }, h("label", null, "Modelo", cajaModelo), h("button", { type: "button", class: "btn", onclick: cargar }, "Cargar modelos")),
-    h("p", { class: "vid-ayuda", text: "Pega la clave y pulsa «Cargar modelos» para elegir de la lista del servicio, o escribe el nombre a mano." }),
+    h("div", { class: "ia-fila" }, h("label", null, "Modelo", modeloIn, lista), h("button", { type: "button", class: "btn", onclick: cargar }, "Cargar modelos")),
+    h("p", { class: "vid-ayuda", text: "Pega la clave y pulsa «Cargar modelos» para ver los del servicio, o escribe el nombre a mano." }),
     h("p", { class: "vid-ayuda", text: "Privacidad: a la IA solo se envían textos y cifras que salen de tus datos (estadísticas y tus notas). Nunca el vídeo ni imágenes." }),
     h("div", { class: "vid-herr" }, h("button", { type: "button", class: "btn primario", onclick: async () => { await guardar(); msg.textContent = "Guardado."; } }, "Guardar"),
       h("button", { type: "button", class: "btn", onclick: async () => { await guardar(); msg.textContent = "Probando…"; try { msg.textContent = await invoke("probar_ia"); } catch (e) { msg.textContent = String(e); } } }, "Guardar y probar")), msg));
-  if (!lista.length && (a.tiene_clave)) cargar();
+}
+
+/** Servicio de IA (DeepSeek / OpenRouter) y modelo, junto a la caja de escritura: se cambian sobre la marcha, sin ir a Ajustes. */
+function configIA(root) {
+  const provs = A.proveedores || {};
+  const servicio = h("select", { class: "peq", "aria-label": "Servicio de IA", title: "Servicio de IA que responde", disabled: A.ocupado || null, onchange: async (e) => { await cambiarProveedor(root, e.target.value); } },
+    Object.entries(provs).map(([id, p]) => h("option", { value: id, selected: id === A.proveedor || null, text: p.nombre + (p.tiene_clave ? "" : " (sin clave)") })));
+  const elegir = async (m) => { A.modelo = m.trim(); await invoke("elegir_modelo_ia", { modelo: A.modelo }); };
+  const modelo = A.modelos.length > 60
+    ? h("span", null, h("input", { class: "peq", type: "text", list: "ia-modelos-chat", value: A.modelo, style: { width: "230px" }, spellcheck: "false", "aria-label": "Modelo", title: "Modelo (escribe para filtrar la lista)", onchange: (e) => elegir(e.target.value) }),
+      h("datalist", { id: "ia-modelos-chat" }, A.modelos.map((m) => h("option", { value: m }))))
+    : h("select", { class: "peq", "aria-label": "Modelo", title: "Modelo de IA que responde", onchange: (e) => elegir(e.target.value) },
+      (A.modelos.includes(A.modelo) || !A.modelo ? A.modelos : [A.modelo, ...A.modelos]).map((m) => h("option", { value: m, selected: m === A.modelo || null, text: m })),
+      !A.modelos.length ? h("option", { value: A.modelo, text: A.modelo || "(sin definir)" }) : null);
+  return h("div", { class: "ia-conf" }, servicio, modelo, h("small", { class: "ia-conf-ayuda", text: "Cambia de servicio o de modelo cuando quieras" }));
+}
+async function cambiarProveedor(root, id) {
+  A.error = ""; await invoke("elegir_proveedor_ia", { proveedor: id });
+  const aj = await invoke("leer_ajustes_ia"); A.proveedores = aj.proveedores; A.proveedor = aj.proveedor; A.modelo = aj.modelo; A.modelos = []; A.nombreProveedor = aj.proveedores?.[aj.proveedor]?.nombre || "";
+  if (!aj.tiene_clave) A.error = `Falta la clave de ${A.nombreProveedor}: pégala en Ajustes → IA.`;
+  pintar(root);
+  if (aj.tiene_clave) invoke("listar_modelos_ia", {}).then((m) => { A.modelos = m; if (A.proveedor === aj.proveedor && document.querySelector(".ia-root")) pintar(root); }).catch(() => {});
 }
 
 function pintar(root) {
@@ -120,15 +159,12 @@ function pintar(root) {
       A.grupo ? sel(A.equipos.map((e) => [e, e]), A.equipo, (v) => { A.equipo = v; A.jugador = ""; cargarEquipos(root); }, "Equipo…") : null,
       A.equipo ? sel(A.jugadores.map((j) => [j, j]), A.jugador, (v) => { A.jugador = v; }, "Jugador…") : null,
       h("label", { class: "ia-breve", title: "Respuestas de 3 frases máximo, para usar durante el partido" }, h("input", { type: "checkbox", checked: A.breve || null, onchange: (e) => { A.breve = e.target.checked; try { localStorage.setItem("ia-breve", A.breve ? "1" : "0"); } catch { /* ignorar */ } entrada.placeholder = A.breve ? "Pregunta rápida (modo partido)…" : "Pregunta…"; } }), " Modo partido"),
-      h("label", { class: "ia-breve", title: "Modelo de IA que responde" }, "Modelo ",
-        h("select", { class: "peq", onchange: async (e) => { A.modelo = e.target.value; await invoke("elegir_modelo_ia", { modelo: A.modelo }); } },
-          (A.modelos.includes(A.modelo) || !A.modelo ? A.modelos : [A.modelo, ...A.modelos]).map((m) => h("option", { value: m, selected: m === A.modelo || null, text: m })),
-          !A.modelos.length ? h("option", { value: A.modelo, text: A.modelo || "(sin definir)" }) : null)),
       h("button", { type: "button", class: "btn peq", style: "margin-left:auto", onclick: () => { location.hash = "#/ajustes?tab=ia"; } }, "⚙ Ajustes")),
     h("div", { class: "ia-cuerpo" }, lat,
       h("div", { class: "ia-main" },
-        h("div", { class: "ia-msgs" }, ...(A.mensajes.length || A.ocupado ? burbujas() : [h("div", { class: "ia-vacio" }, h("p", { text: "Pregúntame sobre cualquier equipo, jugador, división o temporada que hayas descargado, o sobre tus notas de vídeo." }),
+        h("div", { class: "ia-msgs" }, ...(A.mensajes.length || A.ocupado ? burbujas() : [A.error ? h("div", { class: "ia-m ia ia-err", text: A.error }) : null, h("div", { class: "ia-vacio" }, h("p", { text: "Pregúntame sobre cualquier equipo, jugador, división o temporada que hayas descargado, o sobre tus notas de vídeo." }),
           h("div", { class: "ia-sug" }, sugerencias.map((s) => h("button", { type: "button", class: "btn", onclick: () => enviar(root, s) }, s))))])),
+        configIA(root),
         h("div", { class: "ia-input" }, entrada, h("button", { type: "button", class: "btn primario", disabled: A.ocupado || null, onclick: () => { const t = entrada.value; entrada.value = ""; enviar(root, t); } }, "Enviar"))))));
   const caja = document.querySelector(".ia-msgs"); if (caja) caja.scrollTop = caja.scrollHeight;
   entrada.focus();

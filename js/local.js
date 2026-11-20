@@ -3,6 +3,8 @@
 // Los datos de la FEB se importan desde un paquete (.json) que se exporta en la app del Mac (Ajustes → Descarga de datos).
 // Implementa los mismos comandos que la app de escritorio, así las vistas no distinguen el modo.
 
+import { describir, normalizar } from "./jugada-modelo.js";
+
 // ---------- utilidades ----------
 const slug = (t) => String(t || "").normalize("NFKD").replace(/[^\x00-\x7f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
 const stem = (db) => String(db || "").replace(/\.db$/, "");
@@ -13,12 +15,15 @@ let _db, _motor;
 function abrir() {
   return (_db ||= new Promise((res, rej) => {
     if (!window.indexedDB) return rej(new Error("sin IndexedDB"));
-    const r = indexedDB.open("febstats", 1);
+    const r = indexedDB.open("febstats", 3);
     r.onupgradeneeded = () => {
       const d = r.result;
-      d.createObjectStore("grupos", { keyPath: "db" });
-      d.createObjectStore("chats", { keyPath: "id", autoIncrement: true });
-      d.createObjectStore("mensajes", { keyPath: "id", autoIncrement: true }).createIndex("chat", "chat_id");
+      if (!d.objectStoreNames.contains("grupos")) d.createObjectStore("grupos", { keyPath: "db" });
+      if (!d.objectStoreNames.contains("chats")) d.createObjectStore("chats", { keyPath: "id", autoIncrement: true });
+      if (!d.objectStoreNames.contains("mensajes")) d.createObjectStore("mensajes", { keyPath: "id", autoIncrement: true }).createIndex("chat", "chat_id");
+      if (!d.objectStoreNames.contains("jugadas")) d.createObjectStore("jugadas", { keyPath: "id" }); // jugadas del Playbook (solo lectura en el iPad)
+      if (!d.objectStoreNames.contains("notas")) d.createObjectStore("notas", { keyPath: "id" });        // notas (solo lectura)
+      if (!d.objectStoreNames.contains("imagenes")) d.createObjectStore("imagenes", { keyPath: "nombre" }); // imágenes de las notas, si el paquete las incluye
     };
     r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); r.onblocked = () => rej(new Error("bloqueado"));
   }));
@@ -32,7 +37,7 @@ async function tx(store, modo, f) {
     t.oncomplete = () => res(out); t.onerror = () => rej(t.error); t.onabort = () => rej(t.error);
   });
 }
-const CLAVE = { grupos: "db", chats: "id", mensajes: "id" };
+const CLAVE = { grupos: "db", chats: "id", mensajes: "id", jugadas: "id", notas: "id", imagenes: "nombre" };
 const memoria = {}; // último recurso si ni localStorage está disponible: se pierde al cerrar
 const lsLeer = (s) => { try { return JSON.parse(localStorage.getItem(`feb-${s}`) || "null") || memoria[s] || { next: 1, filas: {} }; } catch { return memoria[s] || { next: 1, filas: {} }; } };
 const lsGuardar = (s, o) => { memoria[s] = o; try { localStorage.setItem(`feb-${s}`, JSON.stringify(o)); } catch { /* solo en memoria */ } };
@@ -47,8 +52,8 @@ async function todos(s) { return (await usaIDB()) ? tx(s, "readonly", (o) => o.g
 async function porChat(id) { return (await usaIDB()) ? tx("mensajes", "readonly", (o) => o.index("chat").getAll(id)) : Object.values(lsLeer("mensajes").filas).filter((m) => m.chat_id === id); }
 
 // ---------- datos incluidos en el propio archivo (versión de un solo archivo .html generada por la app del Mac) ----------
-let embebidos = [];
-try { const t = document.getElementById("feb-paquete")?.textContent?.trim(); if (t && !t.startsWith("__")) embebidos = (JSON.parse(t).grupos || []).map((g) => ({ ...g, payload: g.payload })); } catch { /* sin datos incluidos */ }
+let embebidos = [], jugadasEmbebidas = [], notasEmbebidas = [], imagenesEmbebidas = [];
+try { const t = document.getElementById("feb-paquete")?.textContent?.trim(); if (t && !t.startsWith("__")) { const j = JSON.parse(t); embebidos = (j.grupos || []).map((g) => ({ ...g, payload: g.payload })); jugadasEmbebidas = j.jugadas || []; notasEmbebidas = j.notas || []; imagenesEmbebidas = j.imagenes || []; } } catch { /* sin datos incluidos */ }
 
 // ---------- eventos (equivale a los eventos de Tauri) ----------
 const oyentes = {};
@@ -69,8 +74,53 @@ export async function importarPaquetes(archivos) {
       cache.delete(stem(db)); nombres.push(`${p.competicion} ${String(p.grupo).replace(/"/g, "")} ${p.temporada}`);
     }
   }
+  // jugadas del Playbook incluidas en el paquete: sustituyen a las que hubiera (el iPad solo las consulta)
+  for (const f of archivos) { let j; try { j = JSON.parse(await f.text()); } catch { continue; } if (Array.isArray(j.jugadas)) { for (const x of await todos("jugadas")) await del("jugadas", x.id); for (const x of j.jugadas) await put("jugadas", x); nombres.push(`${j.jugadas.length} jugada(s) del Playbook`); } }
+  // notas (y sus imágenes, si se incluyeron) del paquete: sustituyen a las que hubiera; en el iPad solo se leen
+  for (const f of archivos) { let j; try { j = JSON.parse(await f.text()); } catch { continue; } if (Array.isArray(j.notas)) {
+    for (const x of await todos("notas")) await del("notas", x.id); for (const x of j.notas) await put("notas", x);
+    for (const x of await todos("imagenes")) await del("imagenes", x.nombre); for (const x of j.imagenes || []) await put("imagenes", x);
+    nombres.push(`${j.notas.length} nota(s)${(j.imagenes || []).length ? ` y ${j.imagenes.length} imagen(es)` : " (sin imágenes)"}`); } }
   try { await navigator.storage?.persist?.(); } catch { /* ignorar */ }
   return nombres;
+}
+
+async function listarJugadas() { // las incluidas en el archivo y las importadas (estas tienen prioridad)
+  const m = new Map(jugadasEmbebidas.map((j) => [j.id, j])); for (const j of await todos("jugadas")) m.set(j.id, j);
+  return [...m.values()].sort((a, b) => String(a.coleccion || "").localeCompare(String(b.coleccion || ""), "es") || (a.orden || 0) - (b.orden || 0) || a.id - b.id);
+}
+
+// ---------- notas (solo lectura) ----------
+const plegar = (t) => String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+async function notasTodas() { const m = new Map(notasEmbebidas.map((n) => [n.id, n])); for (const n of await todos("notas")) m.set(n.id, n); return [...m.values()]; }
+const metaNota = (n) => ({ titulo: n.titulo || "", temporada: n.temporada || "", grupo: n.grupo || "", equipo: n.equipo || "", equipo_txt: n.equipo_txt || "", jugador: n.jugador || "", jugador_txt: n.jugador_txt || "", partido: n.partido || "", partido_txt: n.partido_txt || "", creada: n.creada || "" });
+function tituloNota(n) { if (n.titulo && n.titulo.trim()) return n.titulo.trim(); let c = false; for (const l of String(n.cuerpo || "").split("\n")) { if (/^\s*```/.test(l)) { c = !c; continue; } if (!c && /^# \S/.test(l)) return l.slice(2).trim(); } return `Nota ${n.creada || n.id}`; }
+function enlacesNota(t) { const o = []; for (const seg of String(t || "").split(/(```[\s\S]*?```|`[^`\n]+`)/).filter((_, i) => i % 2 === 0)) for (const m of seg.matchAll(/\[\[([^\]\n|]+)(?:\|[^\]\n]*)?\]\]/g)) { const x = m[1].split("#")[0].trim(); if (x && !o.includes(x)) o.push(x); } return o; }
+function resumenNota(n) {
+  let ext = ""; for (const l of String(n.cuerpo || "").split("\n")) { const t = l.trim().replace(/^[#>\-*\s]+/, ""); if (t && !t.startsWith("```") && !t.startsWith("![")) { ext = t.slice(0, 160); break; } }
+  return { id: n.id, titulo: tituloNota(n), meta: metaNota(n), modificada: n.modificada || 0, extracto: ext, enlaces: enlacesNota(n.cuerpo), palabras: String(n.cuerpo || "").split(/\s+/).filter(Boolean).length };
+}
+async function buscarNotas({ consulta = "", regex = false, mayus = false, filtro = {} } = {}) {
+  const q = String(consulta).trim(); let re = null;
+  if (regex && q) { try { re = new RegExp(q, mayus ? "" : "i"); } catch (e) { throw `Expresión regular no válida: ${e.message}`; } }
+  const casa = (t) => (!q ? true : re ? re.test(t) : mayus ? String(t).includes(q) : plegar(t).includes(plegar(q)));
+  const out = [];
+  for (const n of (await notasTodas()).sort((a, b) => (b.modificada || 0) - (a.modificada || 0))) {
+    const m = metaNota(n);
+    if (filtro.general && m.temporada) continue;
+    if ((filtro.temporada && m.temporada !== filtro.temporada) || (filtro.equipo && m.equipo_txt !== filtro.equipo) || (filtro.jugador && m.jugador_txt !== filtro.jugador) || (filtro.partido && m.partido !== filtro.partido)) continue;
+    const titulo = tituloNota(n), enMeta = casa(titulo) || casa(m.equipo_txt) || casa(m.jugador_txt) || casa(m.temporada) || casa(m.partido_txt);
+    const lineas = []; let total = 0;
+    if (q) String(n.cuerpo || "").split("\n").forEach((l, i) => { if (casa(l)) { total++; if (lineas.length < 4) lineas.push({ n: i + 1, texto: l.trim().slice(0, 200) }); } });
+    if (q && !total && !enMeta) continue;
+    out.push({ ...resumenNota(n), coincidencias: total, lineas, en_titulo: enMeta });
+  }
+  return out;
+}
+async function imagenNota({ nombre }) {
+  const im = (await get("imagenes", nombre)) || imagenesEmbebidas.find((x) => x.nombre === nombre);
+  if (!im) throw "La imagen no se incluyó en este paquete (al exportar, marca «Incluir también las imágenes de las notas»).";
+  return `data:${im.mime};base64,${im.base64}`;
 }
 
 async function listarGrupos() {
@@ -97,8 +147,21 @@ async function todosPayloads() {
 }
 
 // ---------- ajustes de IA (en este dispositivo) ----------
-const cfgIA = () => { try { return { base_url: "https://api.deepseek.com", modelo: "deepseek-chat", api_key: "", instrucciones: "", ...JSON.parse(localStorage.getItem("feb-ia") || "{}") }; } catch { return { base_url: "https://api.deepseek.com", modelo: "deepseek-chat", api_key: "", instrucciones: "" }; } };
+const limpiarClave = (k) => { let t = String(k || "").trim(); for (let i = 0; i < 6; i++) { const a = t; t = t.replace(/^[\s"'`“”‘’«»]+|[\s"'`“”‘’«»]+$/g, "").replace(/^authorization:/i, "").replace(/^bearer[: ]\s*/i, ""); if (t === a) break; } return t.replace(/\s+/g, ""); }; // sin comillas ni «Bearer» pegados por error
+const PROVEEDORES = { deepseek: { nombre: "DeepSeek", base_url: "https://api.deepseek.com", modelo: "deepseek-chat" }, openrouter: { nombre: "OpenRouter", base_url: "https://openrouter.ai/api/v1", modelo: "openai/gpt-4o-mini" } };
+function iaGuardada() { // formato nuevo (proveedor + una clave y un modelo por servicio); convierte el antiguo (una sola URL)
+  let raw = {}; try { raw = JSON.parse(localStorage.getItem("feb-ia") || "{}"); } catch { /* sin ajustes */ }
+  if (raw.proveedores) return raw;
+  const id = String(raw.base_url || "").toLowerCase().includes("openrouter") ? "openrouter" : "deepseek";
+  const provs = { deepseek: { api_key: "", modelo: "" }, openrouter: { api_key: "", modelo: "" } };
+  if (raw.api_key || raw.modelo) provs[id] = { api_key: raw.api_key || "", modelo: raw.modelo || "" };
+  return { proveedor: id, proveedores: provs, instrucciones: raw.instrucciones || "" };
+}
 const guardarCfgIA = (c) => { try { localStorage.setItem("feb-ia", JSON.stringify(c)); } catch { /* sin almacenamiento: solo esta sesión */ } };
+const cfgDe = (ia, id) => { const def = PROVEEDORES[id] || PROVEEDORES.deepseek; const p = ia.proveedores?.[id] || {}; return { proveedor: PROVEEDORES[id] ? id : "deepseek", base_url: def.base_url, modelo: (p.modelo || "").trim() || def.modelo, api_key: limpiarClave(p.api_key), instrucciones: ia.instrucciones || "" }; };
+const cfgIA = () => { const ia = iaGuardada(); return cfgDe(ia, ia.proveedor); };
+const cabecerasIA = (c, clave = c.api_key) => ({ "content-type": "application/json", authorization: `Bearer ${clave}`, ...(c.base_url.includes("openrouter.ai") ? { "X-Title": "FEBstats" } : {}) });
+async function errorHttp(r) { let d = ""; try { const j = await r.json(); d = j?.error?.message || j?.error || j?.message || ""; } catch { /* sin detalle */ } return `Error ${r.status} del servicio de IA${d ? `: ${String(d).slice(0, 200)}` : "."}`; }
 
 // ---------- herramientas de la IA (equivalentes a ia.rs, sin SQL ni vídeo) ----------
 const HERRAMIENTAS = [
@@ -109,12 +172,13 @@ const HERRAMIENTAS = [
   { name: "tiros_resumen", description: "Resumen de tiros por zona de la cancha (intentos, aciertos, %) de un jugador o equipo. Zonas: pintura, media_baja, media_centro, media_alta, corner3_baja, corner3_alta, ala3_baja, ala3_alta, top3.", parameters: { type: "object", properties: { jugador: { type: "string" }, equipo: { type: "string" }, db: { type: "string" } } } },
 ];
 HERRAMIENTAS.push(
+  { name: "jugadas_playbook", description: "Jugadas del playbook del entrenador (dibujadas en la pizarra), descritas paso a paso en texto, con su vinculación a equipo, jugador y partido, su colección y su descripción. Filtros opcionales y parciales: texto, equipo, jugador, partido, coleccion.", parameters: { type: "object", properties: { texto: { type: "string" }, equipo: { type: "string" }, jugador: { type: "string" }, partido: { type: "string" }, coleccion: { type: "string" } } } },
   { name: "grafico_ranking", description: "DIBUJA un gráfico de barras real con el ranking de jugadores por una métrica (datos reales de la app). Métricas: puntos_prom, reb_tot_prom, asistencias_prom, recuperaciones_prom, perdidas_prom, valoracion_prom, t2_pct, t3_pct, tl_pct, tc_pct, ts_pct, uso_pct, ppt, indice_final. Por defecto: grupo más reciente, top 10, mínimo 3 partidos.", parameters: { type: "object", properties: { metrica: { type: "string" }, equipo: { type: "string" }, db: { type: "string" }, n: { type: "integer" }, min_partidos: { type: "integer" } }, required: ["metrica"] } },
   { name: "grafico_evolucion", description: "DIBUJA un gráfico de líneas real con la evolución partido a partido de un jugador. Métricas (hasta 3): puntos, reb_tot, asistencias, recuperaciones, perdidas, valoracion, minutos, tc_pct.", parameters: { type: "object", properties: { jugador: { type: "string" }, equipo: { type: "string" }, db: { type: "string" }, metricas: { type: "array", items: { type: "string" } } }, required: ["jugador", "metricas"] } },
   { name: "grafico_tiros", description: "DIBUJA el mapa de tiros real (cada tiro y % por zona) de un jugador o equipo. Filtros opcionales: cuarto, db.", parameters: { type: "object", properties: { jugador: { type: "string" }, equipo: { type: "string" }, db: { type: "string" }, cuarto: { type: "integer" } } } },
   { name: "crear_grafico", description: "DIBUJA un gráfico genérico con cifras que YA has obtenido de otras herramientas (nunca inventes valores). tipo=barras: items [{etiqueta, valor}]. tipo=lineas: etiquetas [..] y series [{nombre, valores [..]}]. tipo=dispersion: puntos [{etiqueta, x, y}] con eje_x y eje_y. Opcional: titulo, unidad.", parameters: { type: "object", properties: { tipo: { type: "string", enum: ["barras", "lineas", "dispersion"] }, titulo: { type: "string" }, unidad: { type: "string" }, items: { type: "array", items: { type: "object" } }, etiquetas: { type: "array", items: { type: "string" } }, series: { type: "array", items: { type: "object" } }, puntos: { type: "array", items: { type: "object" } }, eje_x: { type: "string" }, eje_y: { type: "string" } }, required: ["tipo"] } },
 );
-const SISTEMA = "Eres el asistente de análisis de un entrenador de baloncesto español. Respondes SIEMPRE en español, con datos reales de las herramientas: nunca inventes cifras. Hay datos de varias competiciones, grupos y temporadas a la vez: si la pregunta no precisa cuál, usa listar_datos y busca en todos (o pregunta cuál si es ambiguo), e indica siempre la temporada/grupo de cada dato. Los datos vienen de la FEB (estadística de partido y mapa de tiros). Si piden un gráfico, mapa de tiros, ranking o evolución, usa las herramientas grafico_ranking, grafico_evolucion, grafico_tiros o crear_grafico: la app los DIBUJA de verdad; nunca dibujes con texto o ASCII y no copies cifras inventadas (crear_grafico solo con cifras ya obtenidas de otras herramientas). No tienes acceso al vídeo ni a imágenes, solo a texto y cifras. Sé concreto y útil para tomar decisiones de entrenador; usa listas cortas y tablas markdown cuando comparen cifras.";
+const SISTEMA = "Eres el asistente de análisis de un entrenador de baloncesto español. Respondes SIEMPRE en español, con datos reales de las herramientas: nunca inventes cifras. Hay datos de varias competiciones, grupos y temporadas a la vez: si la pregunta no precisa cuál, usa listar_datos y busca en todos (o pregunta cuál si es ambiguo), e indica siempre la temporada/grupo de cada dato. Los datos vienen de la FEB (estadística de partido y mapa de tiros). Si piden un gráfico, mapa de tiros, ranking o evolución, usa las herramientas grafico_ranking, grafico_evolucion, grafico_tiros o crear_grafico: la app los DIBUJA de verdad; nunca dibujes con texto o ASCII y no copies cifras inventadas (crear_grafico solo con cifras ya obtenidas de otras herramientas). No tienes acceso al vídeo ni a imágenes, solo a texto y cifras. Sé concreto y útil para tomar decisiones de entrenador; usa listas cortas y tablas markdown cuando comparen cifras. El entrenador también tiene un playbook de jugadas dibujadas: consúltalo con jugadas_playbook cuando pregunte por sus jugadas o por lo que ejecuta un equipo o jugador.";
 
 const CAMPOS_J = ["jugador", "equipo", "partidos", "puntos_prom", "reb_tot_prom", "asistencias_prom", "recuperaciones_prom", "perdidas_prom", "valoracion_prom", "t2_pct", "t3_pct", "tl_pct", "tc_pct", "ts_pct", "uso_pct", "pp_pos", "ppt", "rol", "perfil", "indice_final", "minutos_total", "puntos"];
 const compacto = (j, g) => { const o = { temporada: g.temporada, grupo: g.grupo, competicion: g.competicion }; for (const k of CAMPOS_J) if (j[k] != null) o[k] = j[k]; return o; };
@@ -200,6 +264,12 @@ function crearGrafico(a) {
 async function ejecutar(nombre, a) {
   if (nombre === "grafico_ranking") return graficoRanking(a); if (nombre === "grafico_evolucion") return graficoEvolucion(a);
   if (nombre === "grafico_tiros") return graficoTiros(a); if (nombre === "crear_grafico") return crearGrafico(a);
+  if (nombre === "jugadas_playbook") {
+    const f = (s) => slug(s || ""), ok = (campo, filtro) => !filtro || f(campo).includes(f(filtro));
+    const out = (await listarJugadas()).filter((j) => ok(j.equipo_txt, a.equipo) && ok(j.jugador_txt, a.jugador) && ok(j.partido_txt, a.partido) && ok(j.coleccion, a.coleccion) && ok(`${j.titulo} ${j.descripcion} ${j.texto}`, a.texto))
+      .slice(0, 20).map((j) => { let texto = j.texto; try { texto = describir(normalizar(JSON.parse(j.datos))) || j.texto; } catch { /* usa el texto guardado */ } return { id: j.id, titulo: j.titulo, coleccion: j.coleccion, seccion: j.seccion, equipo: j.equipo_txt, jugador: j.jugador_txt, partido: j.partido_txt, temporada: j.temporada, pasos: texto, descripcion: j.descripcion }; });
+    return out.length ? out : { resultado: "No hay jugadas del Playbook que coincidan." };
+  }
   const q = (s) => slug(s || ""); const sel = [];
   for (const [g, p] of await todosPayloads()) if (!a.db || stem(g.db) === stem(a.db)) sel.push([g, p]);
   if (nombre === "listar_datos") return { grupos: (await listarGrupos()).map((g) => ({ db: g.db, competicion: g.competicion, grupo: g.grupo, temporada: g.temporada, partidos: g.partidos })) };
@@ -246,13 +316,10 @@ async function ejecutar(nombre, a) {
 async function ronda(cfg, msgs, chatId) {
   let r;
   try {
-    r = await fetch(`${cfg.base_url.replace(/\/$/, "")}/chat/completions`, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${cfg.api_key}` },
+    r = await fetch(`${cfg.base_url.replace(/\/$/, "")}/chat/completions`, { method: "POST", headers: cabecerasIA(cfg),
       body: JSON.stringify({ model: cfg.modelo, messages: msgs, tools: HERRAMIENTAS.map((f) => ({ type: "function", function: f })), stream: true, temperature: 0.3 }) });
   } catch { throw "Sin conexión con el servicio de IA. Comprueba Internet; los datos siguen disponibles sin IA."; }
-  if (!r.ok) {
-    const c = r.status; const cuerpo = (await r.text().catch(() => "")).slice(0, 200);
-    throw c === 401 ? "La clave de la API no es válida (401). Revísala en «Ajustes»." : c === 402 ? "La cuenta de IA no tiene saldo (402)." : c === 429 ? "Demasiadas peticiones a la IA (429); espera unos segundos." : `Error ${c} del servicio de IA: ${cuerpo}`;
-  }
+  if (!r.ok) { const c = r.status, m = await errorHttp(r); throw c === 401 ? `${m}. Revisa la clave en «Ajustes → IA».` : c === 402 ? `${m}. Puede que la cuenta no tenga saldo.` : c === 429 ? `${m}. Espera unos segundos.` : m; }
   const rd = r.body.getReader(); const dec = new TextDecoder(); let buf = "", contenido = ""; const llamadas = [];
   for (;;) {
     const { done, value } = await rd.read(); if (done) break;
@@ -275,7 +342,7 @@ async function ronda(cfg, msgs, chatId) {
 async function preguntar({ chatId, texto, contexto, breve }) {
   const cfg = cfgIA();
   try {
-    if (!cfg.api_key) throw "Falta la clave de la API de IA. Ve a Ajustes → IA y pégala (DeepSeek: platform.deepseek.com).";
+    if (!cfg.api_key) throw "Falta la clave de la API de IA. Ve a Ajustes → IA y pégala (DeepSeek u OpenRouter).";
     const hist = (await porChat(chatId)).sort((a, b) => a.id - b.id).slice(-10);
     if (!hist.length) { const c = await get("chats", chatId); if (c) await put("chats", { ...c, titulo: texto.slice(0, 48) }); }
     await put("mensajes", { chat_id: chatId, rol: "user", contenido: texto, creado: new Date().toISOString() });
@@ -309,6 +376,12 @@ async function preguntar({ chatId, texto, contexto, breve }) {
 const ordenes = {
   ping: async () => ({ local: true }),
   listar_grupos: listarGrupos,
+  listar_jugadas: listarJugadas,
+  notas_listar: async () => (await notasTodas()).sort((a, b) => (b.modificada || 0) - (a.modificada || 0)).map(resumenNota),
+  notas_leer: async ({ id }) => { const n = (await notasTodas()).find((x) => x.id === id); if (!n) throw "Esa nota ya no existe."; return { id: n.id, meta: metaNota(n), contenido: n.cuerpo || "", modificada: n.modificada || 0 }; },
+  notas_buscar: buscarNotas,
+  notas_leer_imagen: imagenNota,
+  notas_versiones: async () => [],
   leer_payload: ({ db }) => payload(db),
   borrar_grupo: async ({ db }) => { await del("grupos", db); cache.delete(stem(db)); return null; },
   listar_chats: async () => (await todos("chats")).sort((a, b) => b.id - a.id).map(({ id, titulo, creado }) => ({ id, titulo, creado })),
@@ -316,20 +389,26 @@ const ordenes = {
   borrar_chat: async ({ id }) => { for (const m of await porChat(id)) await del("mensajes", m.id); await del("chats", id); return null; },
   listar_mensajes: async ({ chatId }) => (await porChat(chatId)).sort((a, b) => a.id - b.id).map((m) => ({ rol: m.rol, contenido: m.contenido })),
   preguntar_ia: preguntar,
-  leer_ajustes_ia: async () => { const c = cfgIA(); return { base_url: c.base_url, modelo: c.modelo, tiene_clave: !!c.api_key, instrucciones: c.instrucciones }; },
-  guardar_ajustes_ia: async ({ baseUrl, modelo, apiKey, instrucciones }) => { const c = cfgIA(); guardarCfgIA({ base_url: String(baseUrl || c.base_url).trim(), modelo: String(modelo || c.modelo).trim(), api_key: apiKey && apiKey.trim() ? apiKey.trim() : c.api_key, instrucciones: instrucciones == null ? c.instrucciones : String(instrucciones).slice(0, 4000) }); return null; },
-  elegir_modelo_ia: async ({ modelo }) => { guardarCfgIA({ ...cfgIA(), modelo: String(modelo).trim() }); return null; },
-  listar_modelos_ia: async ({ baseUrl, apiKey } = {}) => {
-    const c = cfgIA(); const base = (baseUrl || c.base_url).replace(/\/$/, ""); const k = apiKey || c.api_key;
+  leer_ajustes_ia: async () => { const ia = iaGuardada(), c = cfgIA(); const provs = {}; for (const [id, p] of Object.entries(PROVEEDORES)) { const x = cfgDe(ia, id); provs[id] = { nombre: p.nombre, base_url: p.base_url, modelo: x.modelo, tiene_clave: !!x.api_key }; } return { proveedor: c.proveedor, base_url: c.base_url, modelo: c.modelo, tiene_clave: !!c.api_key, instrucciones: c.instrucciones, proveedores: provs }; },
+  guardar_ajustes_ia: async ({ proveedor, modelos, claves, instrucciones }) => {
+    const ia = iaGuardada(); ia.proveedor = PROVEEDORES[proveedor] ? proveedor : "deepseek";
+    for (const id of Object.keys(PROVEEDORES)) { ia.proveedores[id] ||= { api_key: "", modelo: "" }; if (modelos && typeof modelos[id] === "string") ia.proveedores[id].modelo = modelos[id].trim(); const k = limpiarClave(claves && claves[id]); if (k) ia.proveedores[id].api_key = k; }
+    if (instrucciones != null) ia.instrucciones = String(instrucciones).slice(0, 4000); guardarCfgIA(ia); return null;
+  },
+  elegir_proveedor_ia: async ({ proveedor }) => { const ia = iaGuardada(); ia.proveedor = PROVEEDORES[proveedor] ? proveedor : "deepseek"; guardarCfgIA(ia); return null; },
+  elegir_modelo_ia: async ({ modelo }) => { const ia = iaGuardada(); ia.proveedores[ia.proveedor] ||= { api_key: "", modelo: "" }; ia.proveedores[ia.proveedor].modelo = String(modelo).trim(); guardarCfgIA(ia); return null; },
+  listar_modelos_ia: async ({ proveedor, apiKey } = {}) => {
+    const ia = iaGuardada(); const c = cfgDe(ia, proveedor || ia.proveedor); const k = limpiarClave(apiKey) || c.api_key;
     if (!k) throw "Pega primero la clave de API.";
-    let r; try { r = await fetch(`${base}/models`, { headers: { authorization: `Bearer ${k}` } }); } catch { throw "Sin conexión con el servicio."; }
-    if (!r.ok) throw r.status === 401 ? "La clave de la API no es válida (401)." : `El servicio respondió ${r.status} al pedir los modelos; escribe el nombre del modelo a mano.`;
+    let r; try { r = await fetch(`${c.base_url}/models`, { headers: cabecerasIA(c, k) }); } catch { throw "Sin conexión con el servicio."; }
+    if (!r.ok) throw `${await errorHttp(r)} Escribe el nombre del modelo a mano.`;
     const ids = ((await r.json()).data || []).map((m) => m.id).sort(); if (!ids.length) throw "El servicio no devolvió ningún modelo; escribe el nombre a mano."; return ids;
   },
   probar_ia: async () => {
     const c = cfgIA(); if (!c.api_key) throw "Falta la clave de la API.";
-    let r; try { r = await fetch(`${c.base_url.replace(/\/$/, "")}/chat/completions`, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${c.api_key}` }, body: JSON.stringify({ model: c.modelo, messages: [{ role: "user", content: "Responde solo: ok" }], max_tokens: 5 }) }); } catch { throw "Sin conexión con el servicio."; }
-    if (r.ok) return "Conexión correcta."; throw `Error ${r.status} del servicio de IA.`;
+    let r; try { r = await fetch(`${c.base_url}/chat/completions`, { method: "POST", headers: cabecerasIA(c), body: JSON.stringify({ model: c.modelo, messages: [{ role: "user", content: "Responde solo: ok" }], max_tokens: 16 }) }); } catch { throw "Sin conexión con el servicio."; }
+    if (r.ok) return `Conexión correcta con ${PROVEEDORES[c.proveedor].nombre} (modelo ${c.modelo}).`;
+    throw await errorHttp(r);
   },
 };
 

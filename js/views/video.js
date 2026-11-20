@@ -3,10 +3,13 @@
 // vinculado a un partido FEB, el jugador. La IA nunca ve el vídeo: solo ese texto.
 import { h, vacioMsg, dialogo, fechaCorta } from "../util.js";
 import { invoke, urlVideo, elegirVideo, enEscritorio } from "../api.js";
+import { paramHash } from "../state.js";
+import { chipRelacionado, elegirDocumento } from "./relacionado.js";
+import { docsDeNotas, docsDeJugadas, menciones, apunta, hashDeDoc } from "../relaciones.js";
 
 const fmt = (t) => { t = Math.max(0, t || 0); const m = Math.floor(t / 60), s = Math.floor(t % 60); return `${m}:${String(s).padStart(2, "0")}`; };
 const fmtArchivo = (t) => { t = Math.floor(t || 0); const hh = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), s = t % 60; return `${hh ? hh + "h" : ""}${String(m).padStart(2, "0")}m${String(s).padStart(2, "0")}s`; };
-const V = { videos: [], botones: [], eventos: [], sincros: [], video: null, filtro: "", sel: null, grupos: [], payloads: {}, partido: null, jugadores: [], jugadorActivo: "", aviso: "", orden: { col: "t", dir: 1 }, pendiente: null, vinculando: false };
+const V = { docs: [], videos: [], botones: [], eventos: [], sincros: [], video: null, filtro: "", sel: null, grupos: [], payloads: {}, partido: null, jugadores: [], jugadorActivo: "", aviso: "", orden: { col: "t", dir: 1 }, pendiente: null, vinculando: false };
 const RESERVADAS = new Set([" ", "ArrowLeft", "ArrowRight", "C", "Escape"]);
 
 // ---- tiempo de juego ----
@@ -49,12 +52,17 @@ export async function vistaVideo(root) {
   V.videos = await invoke("listar_videos");
   V.botones = await invoke("listar_botones");
   V.grupos = await invoke("listar_grupos");
+  { const [ns, js] = await Promise.all([invoke("notas_listar").catch(() => []), invoke("listar_jugadas").catch(() => [])]); V.docs = [...docsDeNotas(ns), ...docsDeJugadas(js)]; } // para abrir lo enlazado en las marcas
   if (window.__abrirVideo) { V.video = V.videos.find((v) => v.id === window.__abrirVideo) || V.video; window.__abrirVideo = null; }
+  const pedido = paramHash("v"); if (pedido) V.video = V.videos.find((v) => String(v.id) === pedido) || V.video; // enlace desde «Relacionado»
   V.video = V.video && V.videos.find((v) => v.id === V.video.id) || V.videos[0] || null;
   V.eventos = V.video ? await invoke("listar_eventos", { videoId: V.video.id }) : [];
   V.sincros = V.video ? await invoke("listar_sincros", { videoId: V.video.id }) : [];
   await resolverPartido();
   pintar(root);
+  const t = Number(paramHash("t")); // #/video?v=ID&t=SEG: salta a la marca
+  if (t > 0) { const el = root.querySelector("video"); if (el) { const ir = () => { el.currentTime = t; }; if (el.readyState >= 1) ir(); else el.addEventListener("loadedmetadata", ir, { once: true }); } }
+  if (V.partido) chipRelacionado({ partido: String(V.partido.partido_id), partido_txt: `${V.partido.equipo_local} – ${V.partido.equipo_visitante}` }, "Relacionado con este partido").then((c) => { const caja = root.querySelector(".vid-vinculo"); if (c && caja) caja.append(c); }).catch(() => {});
 }
 
 async function abrirVideo(root) {
@@ -89,7 +97,7 @@ function pintar(root) {
     clearTimeout(V.avisoTimer); V.aviso = txt; avisoTxt.textContent = txt; aviso.hidden = !txt;
     if (txt) V.avisoTimer = setTimeout(() => decir(""), 20000);
   };
-  const guardar = async (e) => { await invoke("guardar_evento", { evento: { id: e.id, video_id: V.video.id, boton_id: e.boton_id, t_ini: e.t_ini, t_fin: e.t_fin, nota: e.nota, equipo: e.equipo, jugador: e.jugador, cuarto: e.cuarto, reloj_s: e.reloj_s } }); };
+  const guardar = async (e) => { await invoke("guardar_evento", { evento: { id: e.id, video_id: V.video.id, boton_id: e.boton_id, t_ini: e.t_ini, t_fin: e.t_fin, nota: e.nota, equipo: e.equipo, jugador: e.jugador, cuarto: e.cuarto, reloj_s: e.reloj_s, equipo_id: e.equipo_id || null, jugador_id: e.jugador_id || null } }); };
 
   const saltar = (e) => { vid.currentTime = e.t_ini; vid.play(); V.sel = e.id; pintarTabla(); };
   const pintarTl = () => {
@@ -103,10 +111,18 @@ function pintar(root) {
     return h("select", { class: "vid-jug", onchange: (ev) => onCambio(ev.target.value) }, h("option", { value: "", text: vacio }),
       equipos.map((eq) => h("optgroup", { label: eq }, V.jugadores.filter((j) => j.equipo === eq).map((j) => h("option", { value: claveJ(j), selected: claveJ(j) === valor || null, text: j.jugador })))));
   };
-  const aplicarJugador = (e, clave) => { const [eq, ju] = clave ? clave.split("\x01") : [null, null]; e.equipo = eq; e.jugador = ju; };
+  const aplicarJugador = (e, clave) => { const [eq, ju] = clave ? clave.split("\x01") : [null, null]; e.equipo = eq; e.jugador = ju; const j = clave && V.jugadores.find((x) => claveJ(x) === clave); e.equipo_id = j?.equipo_id || null; e.jugador_id = j?.jugador_id || null; }; // los ids de la FEB enlazan la marca con notas y jugadas
+
+  // enlaces a notas y jugadas del Playbook citadas en la nota de la marca: se pueden abrir con un clic
+  const enlacesDe = (e) => { const caja = h("div", { class: "vid-enls" }); caja.__e = e; pintarEnlaces(caja, e.nota); return caja; };
+  const pintarEnlaces = (caja, txt) => caja.replaceChildren(...menciones(txt).map((m) => { const d = V.docs.find((x) => apunta(x, m));
+    return d ? h("a", { class: "vid-enl", href: hashDeDoc(d), title: d.tipo === "jugada" ? "Abrir la jugada en el Playbook" : "Abrir la nota" }, `${d.tipo === "jugada" ? "🏀" : "📝"} ${d.titulo}`) : h("span", { class: "vid-enl rota", title: "Esa nota o jugada ya no existe" }, `⚠ ${m}`); }));
+  const botonEnlace = (e, nota, tipo, icono, ayuda) => h("button", { type: "button", class: "btn fantasma vid-b", title: ayuda, "aria-label": ayuda, onclick: async () => {
+    const m = await elegirDocumento({ tipos: [tipo] }); if (!m) return;
+    nota.value = `${nota.value} ${m}`.trim(); e.nota = nota.value; await guardar(e); const caja = nota.closest("td")?.querySelector(".vid-enls"); if (caja) pintarEnlaces(caja, e.nota); } }, icono);
 
   const fila = (e, i) => {
-    const nota = h("textarea", { rows: 1, placeholder: "¿Por qué lo marcas?", onchange: async () => { e.nota = nota.value; await guardar(e); if (e.nota.trim() && V.pendiente === e.id) { V.pendiente = null; pintarTabla(); } },
+    const nota = h("textarea", { rows: 1, placeholder: "¿Por qué lo marcas?", onchange: async () => { e.nota = nota.value; await guardar(e); const caja = nota.closest("td")?.querySelector(".vid-enls"); if (caja) pintarEnlaces(caja, e.nota); if (e.nota.trim() && V.pendiente === e.id) { V.pendiente = null; pintarTabla(); } },
       onkeydown: (ev) => { if (ev.key === "Escape" || (ev.key === "Enter" && !ev.shiftKey)) { ev.preventDefault(); nota.blur(); } } }, e.nota || "");
     const juego = h("input", { class: "vid-juego", value: fmtJuego(e.cuarto, e.reloj_s), placeholder: "2T 7:32", title: "Cuarto y reloj del partido (ej. 2T 7:32)",
       onchange: async () => { const p = parseJuego(juego.value); if (p) { e.cuarto = p.cuarto; e.reloj_s = p.reloj_s; } else if (!juego.value.trim()) { e.cuarto = null; e.reloj_s = null; } juego.value = fmtJuego(e.cuarto, e.reloj_s); await guardar(e); },
@@ -117,7 +133,7 @@ function pintar(root) {
       h("td", null, juego),
       h("td", null, h("span", { class: "vid-chip", style: `background:${e.color || "#888"}`, text: e.boton || "—" })),
       V.partido ? h("td", null, selJugador(e.jugador ? `${e.equipo}\x01${e.jugador}` : "", async (c) => { aplicarJugador(e, c); await guardar(e); })) : null,
-      h("td", { class: "vid-nota" }, nota),
+      h("td", { class: "vid-nota" }, h("div", { class: "vid-nota-fila" }, nota, botonEnlace(e, nota, "jugada", "🏀", "Enlazar una jugada del Playbook en la nota de esta marca"), botonEnlace(e, nota, "nota", "📝", "Enlazar una nota en la nota de esta marca")), enlacesDe(e)),
       h("td", null, h("button", { type: "button", class: "btn fantasma", "aria-label": "Borrar marca", onclick: async () => { await invoke("borrar_evento", { id: e.id }); V.eventos = V.eventos.filter((x) => x.id !== e.id); pintarTabla(); } }, "✕")));
   };
   const cuenta = h("b");
@@ -273,7 +289,8 @@ export async function panelBotones(cuerpo) {
   const msg = h("p", { class: "vid-ayuda" });
   const pintarEd = async () => {
     V.botones = await invoke("listar_botones");
-    const campo = (b, k, tipo, attrs = {}) => h("input", { type: tipo, value: b[k] ?? "", ...attrs, onchange: async (e) => { b[k] = tipo === "number" ? Number(e.target.value) : e.target.value; await invoke("guardar_boton", { boton: b }); } });
+    const ETQ = { nombre: "Nombre", categoria: "Categoría", pre_s: "Antes (s)", post_s: "Después (s)", color: "Color" };
+    const campo = (b, k, tipo, attrs = {}) => h("input", { type: tipo, value: b[k] ?? "", "aria-label": ETQ[k] || k, title: ETQ[k] || k, placeholder: ETQ[k] || null, ...attrs, onchange: async (e) => { b[k] = tipo === "number" ? Number(e.target.value) : e.target.value; await invoke("guardar_boton", { boton: b }); } });
     const atajo = (b) => h("input", { class: "corto vid-atajo", readonly: true, value: b.atajo || "", placeholder: "pulsa tecla", title: "Haz clic y pulsa la tecla (Supr/Retroceso la quita)",
       onkeydown: async (ev) => {
         if (ev.key === "Tab") return;

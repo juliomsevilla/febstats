@@ -79,7 +79,7 @@ let pendiente = 0;
 function escanear() {
   pendiente = 0;
   for (const t of document.querySelectorAll("table")) {
-    if (t.dataset.exp || t.closest(".exp-barra")) continue;
+    if (t.dataset.exp || t.closest(".exp-barra, .mdx")) continue; // (las tablas de las notas no llevan botones CSV/PNG)
     t.dataset.exp = "1";
     const ancla = t.closest(".tabla-wrap, .vid-tabla, .tabla-bloque") || t;
     barra(ancla, { csv: () => datosTabla(t), png: async () => canvasTabla(t, tituloDe(t)), nombre: () => nombreArchivo(tituloDe(t) || "tabla", ...sello()) });

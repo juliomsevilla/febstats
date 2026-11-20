@@ -35,7 +35,7 @@ async function panelCarpetas(cont) {
   let mover = true;
   const cambiar = async (clave, ruta) => { msg.textContent = "Guardando…"; try { msg.textContent = await invoke("guardar_ruta", { clave, ruta, mover }); } catch (e) { msg.textContent = String(e); } await panelCarpetas(cont); cont.append(msg); };
   cont.replaceChildren(
-    h("p", { class: "vid-ayuda", text: "Por defecto todo vive en la carpeta de FEBstats, dentro de Documentos. Puedes cambiar dónde se guarda cada una de estas cuatro carpetas (por ejemplo, a un disco externo), pero hacerlo es bajo tu responsabilidad: si esa ubicación deja de estar disponible, FEBstats te avisará y trabajará con una carpeta vacía hasta que la recuperes." }),
+    h("p", { class: "vid-ayuda", text: "Por defecto todo vive en la carpeta de FEBstats, dentro de Documentos. Puedes cambiar dónde se guarda cada una de estas carpetas (por ejemplo, a un disco externo), pero hacerlo es bajo tu responsabilidad: si esa ubicación deja de estar disponible, FEBstats te avisará y trabajará con una carpeta vacía hasta que la recuperes." }),
     h("label", { class: "ia-breve" }, h("input", { type: "checkbox", checked: true, onchange: (e) => { mover = e.target.checked; } }), " Al cambiar una carpeta, mover a la nueva lo que ya haya guardado"),
     h("div", { class: "rut-lista" }, r.rutas.map((x) => h("div", { class: "card rut-fila" },
       h("div", { class: "rut-tit" }, h("b", { text: x.etiqueta }), x.personalizada ? h("span", { class: "vid-chip-s", text: "personalizada" }) : h("span", { class: "vid-chip-s", text: "por defecto" })),
@@ -43,7 +43,7 @@ async function panelCarpetas(cont) {
       h("div", { class: "vid-herr" },
         h("button", { type: "button", class: "btn", onclick: async () => { const n = await elegirCarpeta(x.ruta); if (n) cambiar(x.clave, n); } }, "Cambiar…"),
         x.personalizada ? h("button", { type: "button", class: "btn fantasma", onclick: () => cambiar(x.clave, null) }, "Restablecer") : null)))),
-    h("p", { class: "vid-ayuda", text: `Carpeta de FEBstats: ${r.base}. Es siempre la misma (se crea la primera vez y, al actualizar la app, se reutiliza con todo lo que contiene). Dentro están data, capturas, videos y bin, más copias (copias de seguridad) y config.json (ajustes y clave de IA).` }), msg,
+    h("p", { class: "vid-ayuda", text: `Carpeta de FEBstats: ${r.base}. Es siempre la misma (se crea la primera vez y, al actualizar la app, se reutiliza con todo lo que contiene). Dentro están data (todo lo importante: datos de la FEB, notas, jugadas, vídeos y marcas), capturas, videos y bin, más copias (copias de seguridad) y config.json (ajustes y clave de IA).` }), msg,
     await tarjetaCopias(cont));
 }
 

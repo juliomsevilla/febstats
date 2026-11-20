@@ -14,6 +14,8 @@ export function leerHash() {
   const p = new URLSearchParams(q || "");
   return { view: path.replace(/^\//, "") || "equipo", db: p.get("db") || "", f: { eq: p.get("eq") || "", ju: p.get("ju") || "", pa: p.get("pa") || "" } };
 }
+/** Parámetro extra de la ruta actual (p. ej. #/notas?abrir=… o #/playbook?j=12). */
+export const paramHash = (k) => new URLSearchParams(location.hash.split("?")[1] || "").get(k) || "";
 export function hashDe({ view, db, f }) {
   const p = new URLSearchParams();
   if (db) p.set("db", db);
