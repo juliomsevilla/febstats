@@ -169,6 +169,7 @@ const HERRAMIENTAS = [
   { name: "buscar_jugador", description: "Busca un jugador por nombre (parcial, sin acentos) en TODOS los grupos y temporadas y devuelve su resumen de cada temporada: promedios, porcentajes, uso, rol, perfil, índice.", parameters: { type: "object", properties: { nombre: { type: "string" }, equipo: { type: "string", description: "opcional" } }, required: ["nombre"] } },
   { name: "ficha_equipo", description: "Ficha de un equipo: clasificación, métricas avanzadas (ortg, drtg, ritmo, ts%), mejores jugadores y últimos partidos. Busca en todos los grupos salvo que se indique db.", parameters: { type: "object", properties: { equipo: { type: "string" }, db: { type: "string" } }, required: ["equipo"] } },
   { name: "partidos_jugador", description: "Estadística partido a partido (box score) de un jugador o de un equipo, para ver su evolución. Filtra por jugador y/o equipo; db opcional.", parameters: { type: "object", properties: { jugador: { type: "string" }, equipo: { type: "string" }, db: { type: "string" } } } },
+  { name: "tras_evento", description: "Qué hace el RIVAL justo después de un hecho de un equipo (secuencias de juego con el reloj de cada tiro): p. ej. «probabilidad de que el rival anote tras un triple de mi equipo». Evento del equipo: triple (anotado), doble (anotado), canasta (cualquier tiro de campo anotado) o fallo (tiro de campo fallado). Devuelve cuántos eventos hay y el % de veces que (a) el siguiente tiro del partido es del rival y entra, (b) el rival anota antes de que el equipo vuelva a tirar, (c) el rival anota en los siguientes `ventana_seg` segundos (30 por defecto), junto a la referencia media del rival (canastas por minuto) y la misma medida tras el evento contrario (doble si pides triple, triple si pides doble). SOLO tiros de campo: el mapa de tiros de la FEB no incluye tiros libres, así que no cuenta faltas ni tiros libres. Muestras pequeñas: advierte del tamaño.", parameters: { type: "object", properties: { equipo: { type: "string" }, evento: { type: "string", enum: ["triple", "doble", "canasta", "fallo"] }, jugador: { type: "string", description: "opcional: solo eventos de ese jugador del equipo" }, ventana_seg: { type: "integer" }, db: { type: "string" } }, required: ["equipo"] } },
   { name: "tiros_resumen", description: "Resumen de tiros por zona de la cancha (intentos, aciertos, %) de un jugador o equipo. Zonas: pintura, media_baja, media_centro, media_alta, corner3_baja, corner3_alta, ala3_baja, ala3_alta, top3.", parameters: { type: "object", properties: { jugador: { type: "string" }, equipo: { type: "string" }, db: { type: "string" } } } },
 ];
 HERRAMIENTAS.push(
@@ -178,7 +179,7 @@ HERRAMIENTAS.push(
   { name: "grafico_tiros", description: "DIBUJA el mapa de tiros real (cada tiro y % por zona) de un jugador o equipo. Filtros opcionales: cuarto, db.", parameters: { type: "object", properties: { jugador: { type: "string" }, equipo: { type: "string" }, db: { type: "string" }, cuarto: { type: "integer" } } } },
   { name: "crear_grafico", description: "DIBUJA un gráfico genérico con cifras que YA has obtenido de otras herramientas (nunca inventes valores). tipo=barras: items [{etiqueta, valor}]. tipo=lineas: etiquetas [..] y series [{nombre, valores [..]}]. tipo=dispersion: puntos [{etiqueta, x, y}] con eje_x y eje_y. Opcional: titulo, unidad.", parameters: { type: "object", properties: { tipo: { type: "string", enum: ["barras", "lineas", "dispersion"] }, titulo: { type: "string" }, unidad: { type: "string" }, items: { type: "array", items: { type: "object" } }, etiquetas: { type: "array", items: { type: "string" } }, series: { type: "array", items: { type: "object" } }, puntos: { type: "array", items: { type: "object" } }, eje_x: { type: "string" }, eje_y: { type: "string" } }, required: ["tipo"] } },
 );
-const SISTEMA = "Eres el asistente de análisis de un entrenador de baloncesto español. Respondes SIEMPRE en español, con datos reales de las herramientas: nunca inventes cifras. Hay datos de varias competiciones, grupos y temporadas a la vez: si la pregunta no precisa cuál, usa listar_datos y busca en todos (o pregunta cuál si es ambiguo), e indica siempre la temporada/grupo de cada dato. Los datos vienen de la FEB (estadística de partido y mapa de tiros). Si piden un gráfico, mapa de tiros, ranking o evolución, usa las herramientas grafico_ranking, grafico_evolucion, grafico_tiros o crear_grafico: la app los DIBUJA de verdad; nunca dibujes con texto o ASCII y no copies cifras inventadas (crear_grafico solo con cifras ya obtenidas de otras herramientas). No tienes acceso al vídeo ni a imágenes, solo a texto y cifras. Sé concreto y útil para tomar decisiones de entrenador; usa listas cortas y tablas markdown cuando comparen cifras. El entrenador también tiene un playbook de jugadas dibujadas: consúltalo con jugadas_playbook cuando pregunte por sus jugadas o por lo que ejecuta un equipo o jugador.";
+const SISTEMA = "Eres el asistente de análisis de un entrenador de baloncesto español. Respondes SIEMPRE en español, con datos reales de las herramientas: nunca inventes cifras. Hay datos de varias competiciones, grupos y temporadas a la vez: si la pregunta no precisa cuál, usa listar_datos y busca en todos (o pregunta cuál si es ambiguo), e indica siempre la temporada/grupo de cada dato. Los datos vienen de la FEB (estadística de partido y mapa de tiros, con el reloj de cada tiro: para secuencias de juego como «qué hace el rival tras un triple» usa tras_evento; solo hay tiros de campo, sin tiros libres, ni quintetos ni cambios). Si piden un gráfico, mapa de tiros, ranking o evolución, usa las herramientas grafico_ranking, grafico_evolucion, grafico_tiros o crear_grafico: la app los DIBUJA de verdad; nunca dibujes con texto o ASCII y no copies cifras inventadas (crear_grafico solo con cifras ya obtenidas de otras herramientas). No tienes acceso al vídeo ni a imágenes, solo a texto y cifras. Sé concreto y útil para tomar decisiones de entrenador; usa listas cortas y tablas markdown cuando comparen cifras. El entrenador también tiene un playbook de jugadas dibujadas: consúltalo con jugadas_playbook cuando pregunte por sus jugadas o por lo que ejecuta un equipo o jugador.";
 
 const CAMPOS_J = ["jugador", "equipo", "partidos", "puntos_prom", "reb_tot_prom", "asistencias_prom", "recuperaciones_prom", "perdidas_prom", "valoracion_prom", "t2_pct", "t3_pct", "tl_pct", "tc_pct", "ts_pct", "uso_pct", "pp_pos", "ppt", "rol", "perfil", "indice_final", "minutos_total", "puntos"];
 const compacto = (j, g) => { const o = { temporada: g.temporada, grupo: g.grupo, competicion: g.competicion }; for (const k of CAMPOS_J) if (j[k] != null) o[k] = j[k]; return o; };
@@ -194,6 +195,45 @@ function zona(x, y) { // mismo reparto que index.py / payload.rs
   if (enCorner) return y <= cl ? 4 : 5;
   const ang = Math.atan2(y - HY, x - HX);
   return Math.abs(ang) <= (15 * Math.PI) / 180 ? 8 : ang < 0 ? 6 : 7;
+}
+
+// Secuencias con el reloj del tiro (tiempo_seg = lo que queda del cuarto). Mismo cálculo que la consulta del Mac.
+const tAbs = (t) => (t.cuarto <= 4 ? (t.cuarto - 1) * 600 + (600 - t.tiempo_seg) : 2400 + (t.cuarto - 5) * 300 + (300 - t.tiempo_seg));
+function estadisticaTras(partidos, equipo, esEvento, ventana) {
+  let n = 0, sig = 0, sigAnota = 0, antes = 0, vent = 0;
+  for (const tiros of partidos) {
+    const v = tiros.map((t, i) => ({ t, i, a: tAbs(t) })).sort((x, y) => x.a - y.a || x.i - y.i).map((o) => ({ ...o.t, a: o.a }));
+    for (let i = 0; i < v.length; i++) {
+      if (v[i].equipo !== equipo || !esEvento(v[i])) continue;
+      n++; const resto = v.slice(i + 1);
+      if (resto.length && resto[0].equipo !== equipo) { sig++; if (resto[0].resultado === "acierto") sigAnota++; }
+      const k = resto.findIndex((t) => t.equipo === equipo); const hasta = k < 0 ? resto : resto.slice(0, k);
+      if (hasta.some((t) => t.equipo !== equipo && t.resultado === "acierto")) antes++;
+      if (resto.some((t) => t.a - v[i].a <= ventana && t.equipo !== equipo && t.resultado === "acierto")) vent++;
+    }
+  }
+  const pct = (x) => (n ? Math.round((x / n) * 1000) / 10 : null);
+  return { eventos: n, siguiente_tiro_del_rival_y_entra_pct: pct(sigAnota), siguiente_tiro_es_del_rival_pct: pct(sig), rival_anota_antes_de_que_el_equipo_vuelva_a_tirar_pct: pct(antes), rival_anota_en_ventana_pct: pct(vent) };
+}
+function trasEvento(a, sel, q) {
+  const ev = a.evento || "triple", ventana = Math.max(5, Math.min(120, a.ventana_seg || 30)); const out = [];
+  const defs = { triple: (t) => t.resultado === "acierto" && zona(t.Xinv, t.Yinv) >= 4, doble: (t) => t.resultado === "acierto" && zona(t.Xinv, t.Yinv) < 4, canasta: (t) => t.resultado === "acierto", fallo: (t) => t.resultado !== "acierto" };
+  if (!defs[ev]) return { error: "evento debe ser triple, doble, canasta o fallo." };
+  for (const [g, p] of sel) {
+    const todos = p.tiros || []; if (!todos.length) continue;
+    if (todos.some((t) => t.tiempo_seg == null)) { out.push({ temporada: g.temporada, grupo: g.grupo, error: "Estos datos no llevan el reloj de los tiros: vuelve a exportar el paquete desde el Mac con la versión nueva e impórtalo otra vez." }); continue; }
+    const equipos = [...new Set(todos.map((t) => t.equipo).filter((e) => q(e).includes(q(a.equipo))))];
+    if (!equipos.length) continue; if (equipos.length > 1) return { error: "Varios equipos coinciden; precisa el nombre.", candidatos: equipos };
+    const eq = equipos[0]; const porPartido = new Map(); for (const t of todos) { if (!porPartido.has(t.partido_id)) porPartido.set(t.partido_id, []); porPartido.get(t.partido_id).push(t); }
+    const suyos = [...porPartido.values()].filter((l) => l.some((t) => t.equipo === eq));
+    const filtro = (t) => defs[ev](t) && (!a.jugador || q(t.jugador).includes(q(a.jugador)));
+    let rivalAnota = 0, dur = 0; for (const l of suyos) { rivalAnota += l.filter((t) => t.equipo !== eq && t.resultado === "acierto").length; dur += Math.max(...l.map(tAbs)); }
+    const r = { temporada: g.temporada, grupo: g.grupo, equipo: eq, partidos: suyos.length, evento: ev + (a.jugador ? ` de ${a.jugador}` : ""), ventana_seg: ventana, ...estadisticaTras(suyos, eq, filtro, ventana),
+      referencia_rival_canastas_por_min: dur ? Math.round((rivalAnota / dur) * 60 * 100) / 100 : null };
+    if (ev === "triple" || ev === "doble") { const o = ev === "triple" ? "doble" : "triple"; r["tras_" + o] = estadisticaTras(suyos, eq, (t) => defs[o](t) && (!a.jugador || q(t.jugador).includes(q(a.jugador))), ventana); }
+    out.push(r);
+  }
+  return out.length ? out : { resultado: "No hay tiros de ese equipo." };
 }
 
 export function resumenZonas(tiros) { // para la ficha de jugador: zonas con tiros, de más a menos intentos
@@ -300,6 +340,7 @@ async function ejecutar(nombre, a) {
     out.sort((x, y) => String(y.fecha).localeCompare(String(x.fecha)));
     return out.length ? out.slice(0, 60) : { resultado: "No hay partidos que coincidan." };
   }
+  if (nombre === "tras_evento") return trasEvento(a, sel, q);
   if (nombre === "tiros_resumen") {
     const out = [];
     for (const [g, p] of sel) {
