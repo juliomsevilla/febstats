@@ -39,12 +39,26 @@ export function navegar(nombre, ...params) {
   if (location.hash === destino) renderRuta(); else location.hash = destino;
 }
 
+function aplicarTema(t) {
+  if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
+  else delete document.documentElement.dataset.theme;
+}
+
+function alternarTema() {
+  const actual = document.documentElement.dataset.theme;
+  const oscuro = actual ? actual === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+  const nuevo = oscuro ? "light" : "dark";
+  aplicarTema(nuevo);
+  try { localStorage.setItem("tema", nuevo); } catch { /* sin almacenamiento */ }
+}
+
 function construirShell() {
   const cab = h("header", { class: "cab" },
     h("a", { class: "marca", href: "#/inicio", "aria-label": "FEBstats Directo" },
       h("img", { src: "icons/icon.svg", alt: "", class: "logo" }),
       h("div", null, h("b", { text: "FEBstats" }), h("span", { text: "DIRECTO" }))),
     h("div", { class: "cab-sesion", id: "cab-sesion" }),
+    h("button", { type: "button", class: "btn fantasma tema-btn", title: "Cambiar tema claro/oscuro", "aria-label": "Cambiar tema claro/oscuro", onclick: alternarTema }, icono("sol")),
     h("nav", { class: "nav", role: "navigation", "aria-label": "Secciones" },
       NAV.map(([ruta, etiqueta, ic]) => h("a", { href: `#/${ruta}`, dataset: { ruta }, "aria-label": etiqueta, title: etiqueta }, icono(ic), h("span", { text: etiqueta })))));
   document.body.prepend(cab);
@@ -87,13 +101,13 @@ export function actualizarCabecera() {
   const proy = app.proy;
   const pts = proy ? `${proy.pts.local}–${proy.pts.visitante}` : "0–0";
   c.append(
-    h("a", { href: "#/partido", class: "cab-partido" },
+    h("a", { href: "#/partido", class: "cab-partido", title: "Volver al partido en directo", "aria-label": "Volver al partido en directo" },
       h("span", { class: "cab-eq", text: s.local.nombre }),
       h("b", { text: pts }),
-      h("span", { class: "cab-eq der", text: s.visitante.nombre })),
-    h("span", { class: "cab-reloj" },
-      h("span", { text: etiquetaPeriodo(s.reloj), class: "pill" }),
-      h("b", { "data-reloj": "cab", text: "0:00" })),
+      h("span", { class: "cab-eq der", text: s.visitante.nombre }),
+      h("span", { class: "cab-reloj" },
+        h("span", { text: etiquetaPeriodo(s.reloj), class: "pill" }),
+        h("b", { "data-reloj": "cab", text: "0:00" }))),
   );
   actualizarRelojes();
 }
@@ -116,7 +130,7 @@ function latido() {
   if (!app.sesion) return;
   actualizarRelojes();
   const v = relojAhora(app.sesion.reloj);
-  if (app.sesion.reloj.corriendo && v <= 0.05 && Date.now() - ultimoTick > 1200) {
+  if (!app.soloConsulta && app.sesion.reloj.corriendo && v <= 0.05 && Date.now() - ultimoTick > 1200) {
     ultimoTick = Date.now();
     pararReloj({ automatico: true }).then(() => {
       toast("Fin del tiempo. Pulsa «Siguiente cuarto» o ajusta el reloj.", "aviso");
@@ -128,6 +142,8 @@ function latido() {
 }
 
 async function arrancar() {
+  try { app.soloConsulta = new URL(location.href).searchParams.has("notas"); } catch { app.soloConsulta = false; }
+  try { aplicarTema(localStorage.getItem("tema")); } catch { /* sin almacenamiento */ }
   construirShell();
   const main = document.getElementById("vista");
   main.append(h("div", { class: "vacio" }, h("strong", { text: "Cargando…" }), h("p", { text: "Abriendo los datos del iPad." })));
@@ -142,6 +158,7 @@ async function arrancar() {
   renderRuta();
   setInterval(latido, 500);
   const guardarReloj = () => {
+    if (app.soloConsulta) return;
     if (app.sesion?.reloj.corriendo) {
       // Al salir de la app el reloj se para en el valor actual: no debe seguir
       // descontando mientras el iPad está bloqueado o en otra app.

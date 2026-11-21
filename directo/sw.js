@@ -1,10 +1,10 @@
 // Service worker: la app entera queda en caché para funcionar sin red en pista.
-const VERSION = "fd-2026-11-21-5";
+const VERSION = "fd-2026-11-21-6";
 const ASSETS = [
   "./", "index.html", "manifest.webmanifest", "css/app.css",
   "vendor/sql-wasm.js", "vendor/sql-wasm.wasm",
   "js/app.js", "js/util.js", "js/schema-base.js", "js/schema.js", "js/sqlite.js", "js/idb.js",
-  "js/grupo.js", "js/model.js", "js/court.js", "js/estado.js",
+  "js/grupo.js", "js/model.js", "js/court.js", "js/estado.js", "js/notas-modelo.js",
   "js/views/inicio.js", "js/views/nuevo.js", "js/views/partido.js", "js/views/boxscore.js",
   "js/views/notas.js", "js/views/ajustes.js",
   "icons/icon.svg", "icons/icon-192.png", "icons/icon-512.png", "icons/icon-maskable-512.png", "icons/apple-touch-icon.png",

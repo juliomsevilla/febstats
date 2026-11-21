@@ -2,7 +2,7 @@
 // grupos importados. Todo local; nada sale del iPad.
 
 const NOMBRE = "febstats-directo";
-const VERSION = 1;
+const VERSION = 2;
 let _db = null;
 
 function abrir() {
@@ -22,6 +22,11 @@ function abrir() {
       }
       if (!db.objectStoreNames.contains("extras")) db.createObjectStore("extras", { keyPath: "id" });
       if (!db.objectStoreNames.contains("meta")) db.createObjectStore("meta", { keyPath: "clave" });
+      if (!db.objectStoreNames.contains("notas")) {
+        const n = db.createObjectStore("notas", { keyPath: "id" });
+        n.createIndex("partido", "partido");
+        n.createIndex("modificada", "modificada");
+      }
     };
     r.onsuccess = () => { _db = r.result; resolver(_db); };
     r.onerror = () => rechazar(r.error);

@@ -2,6 +2,7 @@
 import { h, limpiar, btn, icono, toast, dialogo, confirmar, fechaCorta, jornadaTexto, mmss, guardarArchivo } from "../util.js";
 import { app, cargarTodo, abrirGrupo, guardarGrupoEnIDB, cargarSesion, borrarSesion, exportarSesionActual, nombreArchivoExport, etiquetaPeriodo, crearGrupoSinDatos } from "../estado.js";
 import { normalizarPaquete, crearGrupoDesdePayload } from "../grupo.js";
+import { sembrarNotasPaquete } from "../notas-modelo.js";
 import { idb } from "../idb.js";
 import { navegar } from "../app.js";
 
@@ -80,6 +81,7 @@ async function importar(file, cont) {
     }
     if (resumenes.length) {
       await abrirGrupo(resumenes[0].id);
+      await sembrarNotasPaquete(paquete.notas, { grupo: resumenes[0].id, temporada: resumenes[0].resumen?.temporada });
       d.close();
       const r = resumenes[0].resumen;
       toast(`Importado: ${r.competicion} · ${r.grupo} · ${r.partidos} partidos, ${r.tiros} tiros.`, "ok");

@@ -24,7 +24,6 @@ export function vistaBoxscore(cont) {
           h("span", { text: s.local.nombre }), h("b", { text: `${p.pts.local}` }), h("i", { text: "–" }), h("b", { text: `${p.pts.visitante}` }), h("span", { class: "der", text: s.visitante.nombre }),
           h("span", { class: "pill", text: `${etiquetaPeriodo(s.reloj)} · ${mmss(relojAhora(s.reloj))}` })) , 
         h("div", { class: "acciones" },
-          btn("Seguir en directo", () => navegar("partido"), { clase: "btn primario", icon: "partido" }),
           btn("Exportar .db", async () => {
             try { const bytes = await exportarSesionActual(); await guardarArchivo(new Blob([bytes], { type: "application/vnd.sqlite3" }), nombreArchivoExport()); toast("Exportado.", "ok"); }
             catch (e) { toast(e.message, "error"); }

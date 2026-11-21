@@ -8,6 +8,7 @@ import {
 import { crearCancha, puntosDeTiro } from "../court.js";
 import { faltasCuarto } from "../model.js";
 import { statsVacias } from "../grupo.js";
+import { guardarNota, notaDeSesion } from "../notas-modelo.js";
 import { navegar } from "../app.js";
 
 export function vistaPartido(cont) {
@@ -180,7 +181,9 @@ export function vistaPartido(cont) {
     return h("aside", { class: "panel-directo" },
       h("div", { class: "panel-cab" },
         h("div", null, h("h2", { text: "Scouting" }), h("p", { class: "sub", text: "Toca jugador → cancha → anota/falla" })),
-        h("span", { class: "pill " + (app.sesion.reloj.corriendo ? "ok" : ""), text: app.sesion.reloj.corriendo ? "En marcha" : "Parado" })),
+        h("div", { class: "panel-cab-der" },
+          btn("Notas", abrirNotas, { clase: "btn pequeno", icon: "notas", title: "Abrir las notas en otra pestaña" }),
+          h("span", { class: "pill " + (app.sesion.reloj.corriendo ? "ok" : ""), text: app.sesion.reloj.corriendo ? "En marcha" : "Parado" }))),
       seleccionCab(),
       pendiente ? tarjetaTiro() : null,
       asistencia ? tiraAsistencia() : null,
@@ -402,10 +405,25 @@ export function vistaPartido(cont) {
   }
 
   async function accionNota() {
-    const texto = await pedirTexto("Nota rápida", "Ej.: cambios en defensa, detalle técnico, aviso para el descanso…");
+    const texto = await pedirTexto("Nota del partido", "Ej.: cambios en defensa, detalle técnico, aviso para el descanso…");
     if (!texto) return;
     asistencia = null;
-    await agregar("nota", { datos: { texto } });
+    const lado = app.seleccion?.lado || null;
+    const jugador = lado ? jugadores(lado).find((j) => j.dorsal === String(app.seleccion.dorsal)) : null;
+    await guardarNota(notaDeSesion(app.sesion, { cuerpo: texto, lado, jugador }));
+    toast("Nota guardada. Puedes editarla en Notas.", "ok");
+  }
+
+  function abrirNotas() {
+    const url = new URL(location.href);
+    url.searchParams.set("notas", "1");
+    url.hash = "#/notas";
+    const w = window.open(url.href, "_blank");
+    if (!w) {
+      url.searchParams.delete("notas");
+      toast("No se pudo abrir otra pestaña; se abre aquí.", "aviso");
+      location.href = url.href;
+    }
   }
 
   async function sustituir(lado, entra) {

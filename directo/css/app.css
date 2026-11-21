@@ -450,3 +450,36 @@ select { max-width: 280px; }
 .roster-config label select, .roster-config label input, .roster-config label textarea { text-transform: none; letter-spacing: 0; font-weight: 400; font-size: 13px; color: var(--texto); }
 .roster-config .acciones { margin-top: 1px; }
 .roster-cab h3 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.panel-cab-der { display: flex; align-items: center; gap: 6px; }
+
+/* ---------- tema explícito (claro/oscuro), como FEBstats ---------- */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f4f4f2; --panel: #ffffff; --panel-2: #fafaf8; --borde: #e4e4e0;
+  --texto: #1b1917; --suave: #6c6b65; --acento-texto: #c2410c; --acento-soft: #fff0e8;
+  --ok: #18804c; --ok-soft: #e7f6ee; --mal: #c0392b; --mal-soft: #fdecea;
+  --azul: #2a5fd0; --azul-soft: #e9efff; --rojo: #c2332b; --rojo-soft: #fdeceb;
+  --aviso: #9a6500; --suelo: #f2f1ed; --pista: #f8f6f1; --triple: #f4f1ea; --pintura: #ece7da; --linea: #756e5f;
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0f1012; --panel: #191a1d; --panel-2: #212226; --borde: #2c2d33;
+  --texto: #f1f1ef; --suave: #9b9ba3; --acento-texto: #ff8a4d; --acento-soft: #3a2013;
+  --ok: #3fb97f; --ok-soft: #122b1e; --mal: #ef6a5b; --mal-soft: #341513;
+  --azul: #7f9df0; --azul-soft: #18203a; --rojo: #ef7d74; --rojo-soft: #361715;
+  --aviso: #e9b44c; --suelo: #16171a; --pista: #1d1e21; --triple: #1f2023; --pintura: #25262a; --linea: #8d8a82;
+}
+.tema-btn { width: 38px; min-width: 38px; padding: 0; }
+.tema-btn .ico { width: 19px; height: 19px; }
+
+/* ---------- formulario de nota ---------- */
+.nota-form { display: flex; flex-direction: column; gap: 8px; }
+.nota-form-dos { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.nota-campo { display: flex; flex-direction: column; gap: 3px; font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--suave); font-weight: 700; }
+.nota-campo input, .nota-campo select, .nota-campo textarea { text-transform: none; letter-spacing: 0; font-weight: 400; font-size: 13.5px; color: var(--texto); }
+.nota-campo textarea { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; line-height: 1.5; }
+.nota-preview-box { border: 1px solid var(--borde); border-radius: 9px; padding: 8px 10px; background: var(--panel-2); }
+.nota-preview-box summary { cursor: pointer; font-weight: 650; font-size: 12px; }
+.nota-preview { max-height: 240px; overflow: auto; margin-top: 6px; }
+.nota-meta-pills { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 5px; }
+.nota-fechas { margin: 4px 0 10px; }

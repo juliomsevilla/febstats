@@ -207,7 +207,7 @@ export function resumenGrupo(db) {
     jugadores: db.valor("SELECT COUNT(*) FROM plantilla") || 0,
     partidos: db.valor("SELECT COUNT(*) FROM partidos WHERE partido_id NOT LIKE 'directo-%'") || 0,
     tiros: db.valor("SELECT COUNT(*) FROM tiros WHERE sesion_uid IS NULL") || 0,
-    notas: (db.valor("SELECT COUNT(*) FROM directo_notas") || 0) + (db.valor("SELECT COUNT(*) FROM directo_eventos WHERE tipo='nota'") || 0),
+    notas: db.valor("SELECT COUNT(*) FROM directo_notas") || 0,
   };
 }
 
@@ -281,7 +281,7 @@ export function imagenDe(db, nombre) {
  * Escribe la sesión en las tablas FEB (partido, boxscore, tiros) y en las tablas directo_*.
  * `proy` viene de model.js; `eventos` es el registro completo (incluidas anulaciones).
  */
-export function exportarSesion(db, sesion, proy, eventos, { ahora = selloLocal() } = {}) {
+export function exportarSesion(db, sesion, proy, eventos, { ahora = selloLocal(), notas = null } = {}) {
   aplicarEsquema(db);
   const partidoId = sesion.partidoId;
   db.transaccion(() => {
@@ -379,10 +379,24 @@ export function exportarSesion(db, sesion, proy, eventos, { ahora = selloLocal()
     db.insertar("tiros", filasT);
     db.insertar("directo_tiros", filasDT);
 
-    // 4) Si es un amistoso (o el partido no estaba en la base), se añade a las tablas FEB.
+    // 4) Notas editables (todas las del dispositivo) en directo_notas.
+    if (notas !== null) {
+      db.run("DELETE FROM directo_notas");
+      const filasNotas = notas.map((n) => ({
+        id: String(n.id || ""), titulo: n.titulo || "", cuerpo: n.cuerpo || "",
+        temporada: n.temporada || "", grupo: n.grupo || "",
+        partido: n.partido || "", partido_txt: n.partido_txt || "",
+        equipo: n.equipo || "", equipo_txt: n.equipo_txt || "",
+        jugador: n.jugador || "", jugador_txt: n.jugador_txt || "",
+        creada: n.creada || "", modificada: Number(n.modificada) || 0,
+      }));
+      if (filasNotas.length) db.insertar("directo_notas", filasNotas);
+    }
+
+    // 5) Si es un amistoso (o el partido no estaba en la base), se añade a las tablas FEB.
     escribirPartidoFEB(db, sesion, proy);
 
-    // 5) Metadatos de exportación.
+    // 6) Metadatos de exportación.
     for (const [k, v] of [
       ["exportado", ahora], ["sesion_uid", sesion.uid], ["esquema_directo", "1"],
       ["partido_id", partidoId], ["app_version", APP_VERSION],

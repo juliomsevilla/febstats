@@ -5,6 +5,7 @@ import { idb } from "./idb.js";
 import { DB, blobABytes, bytesABlob } from "./sqlite.js";
 import { aplicarEsquema } from "./schema.js";
 import { APP_VERSION, DURACION, resumenGrupo } from "./grupo.js";
+import { sembrarNotasDesdeGrupo, notaDeSesion, tituloDeNota } from "./notas-modelo.js";
 import { proyectar, relojAhora } from "./model.js";
 import { uid, selloLocal } from "./util.js";
 
@@ -40,6 +41,11 @@ export async function cargarTodo() {
   if (!app.grupo && app.grupos.length) {
     try { await abrirGrupo(app.grupos[0].id); } catch (e) { app.errorGrupo = e.message; }
   }
+  if (app.grupo) {
+    const r = app.grupos.find((g) => g.id === app.grupoId)?.resumen || {};
+    try { await sembrarNotasDesdeGrupo(app.grupo, { grupo: app.grupoId, temporada: r.temporada }); } catch (e) { console.error(e); }
+  }
+  try { await migrarNotasEventos(); } catch (e) { console.error(e); }
   avisar();
 }
 
@@ -73,6 +79,30 @@ export async function anularEvento(ref) {
   if (!app.sesion || !ref) return false;
   await agregar("anulacion", { uid: uid("anu"), datos: { ref } });
   return true;
+}
+
+/** Migración única: las notas antiguas vivían como eventos `nota`; pasan al store editable. */
+async function migrarNotasEventos() {
+  if (await idb.get("meta", "notas_eventos_migradas")) return;
+  for (const s of app.sesiones) {
+    let evs = [];
+    try { evs = await idb.porIndice("eventos", "sesion", s.id); } catch { continue; }
+    for (const e of evs) {
+      if (e.t !== "nota" || !e.datos?.texto) continue;
+      const id = `ev:${e.uid}`;
+      if (await idb.get("notas", id)) continue;
+      const lado = e.lado || null;
+      const jugador = lado ? (s.jugadores[lado] || []).find((j) => j.dorsal === String(e.dorsal)) : null;
+      const n = notaDeSesion(s, { cuerpo: e.datos.texto, lado, jugador });
+      n.id = id;
+      n.titulo = tituloDeNota(n);
+      n.creada = selloLocal(new Date(e.ts || Date.now()));
+      n.modificada = Number(e.ts) || Date.now();
+      n.origen = "local";
+      await idb.put("notas", n);
+    }
+  }
+  await idb.put("meta", { clave: "notas_eventos_migradas", valor: "1" });
 }
 
 export async function guardarGrupoEnIDB(id, db, resumen, paqueteId = "") {
@@ -160,7 +190,7 @@ export async function cargarSesion(id) {
   if (!s) throw new Error("Esa sesión ya no existe.");
   // El reloj no sigue corriendo entre aperturas: se guarda el valor y se queda parado.
   // Así cerrar la app no descuenta minutos de partido.
-  if (s.reloj?.corriendo) {
+  if (s.reloj?.corriendo && !app.soloConsulta) {
     s.reloj = { ...s.reloj, reloj: Math.max(0, Number(s.reloj.reloj) || 0), corriendo: false, desde: null };
     await idb.put("sesiones", s);
   }
@@ -338,7 +368,8 @@ export async function exportarSesionActual() {
   }
   reproyectar();
   await guardarSesion();
-  const bytes = exportarSesion(db, app.sesion, app.proy, app.eventos);
+  const notas = await idb.todos("notas");
+  const bytes = exportarSesion(db, app.sesion, app.proy, app.eventos, { notas });
   // Persiste el grupo con el snapshot (los datos importados + directo_* de esta sesión).
   await guardarGrupoEnIDB(app.sesion.grupoId, db, metaGrupoActual(), "");
   return bytes;
