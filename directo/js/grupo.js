@@ -6,6 +6,13 @@ import { aSegundos, selloLocal, uid as nuevoUid } from "./util.js";
 export const APP_VERSION = "1.0.0";
 export const DURACION = { regular: 600, prorroga: 300 };
 const LADOS = ["local", "visitante"];
+
+/** Identidad FEB de un equipo. Los equipos nuevos reciben un id sintético estable por sesión. */
+export const idEquipoFEB = (sesion, lado) => sesion[lado]?.equipoId || `directo-${lado}-${sesion.uid}`;
+function nombreEquipoFEB(sesion, lado) {
+  const nombre = sesion[lado]?.nombre || "";
+  return sesion.local?.nombre === sesion.visitante?.nombre ? `${nombre} (${lado})` : nombre;
+}
 const CORNER_X = 1.575 + Math.sqrt(6.75 ** 2 - 6.6 ** 2);
 
 /** 2 o 3 puntos según la geometría FIBA (coordenadas plegadas Xinv/Yinv). */
@@ -222,8 +229,8 @@ export function resumenGrupo(db) {
     competicion: g.competicion || "", grupo: g.grupo || "", temporada: g.temporada || "",
     equipos: db.valor("SELECT COUNT(*) FROM equipos") || 0,
     jugadores: db.valor("SELECT COUNT(*) FROM plantilla") || 0,
-    partidos: db.valor("SELECT COUNT(*) FROM partidos") || 0,
-    tiros: db.valor("SELECT COUNT(*) FROM tiros") || 0,
+    partidos: db.valor("SELECT COUNT(*) FROM partidos WHERE partido_id NOT LIKE 'directo-%'") || 0,
+    tiros: db.valor("SELECT COUNT(*) FROM tiros WHERE sesion_uid IS NULL") || 0,
     jugadas: db.valor("SELECT COUNT(*) FROM jugadas") || 0,
     notas: db.valor("SELECT COUNT(*) FROM directo_notas") || 0,
   };
@@ -237,8 +244,9 @@ export function equipoIdPorNombre(db, nombre) {
   return db.valor("SELECT equipo_id FROM equipos WHERE nombre=? LIMIT 1", [nombre]);
 }
 
-export function listarPartidos(db, { equipoId = "", texto = "" } = {}) {
+export function listarPartidos(db, { equipoId = "", texto = "", soloOficiales = false } = {}) {
   const cond = [], par = [];
+  if (soloOficiales) cond.push("partido_id NOT LIKE 'directo-%'");
   if (equipoId) { cond.push("(local_id=? OR visitante_id=?)"); par.push(equipoId, equipoId); }
   if (texto) { cond.push("(equipo_local LIKE ? OR equipo_visitante LIKE ? OR fecha LIKE ?)"); const t = `%${texto}%`; par.push(t, t, t); }
   return db.all(`SELECT partido_id,fecha,jornada,equipo_local,equipo_visitante,pts_local,pts_visitante,parciales,local_id,visitante_id,
@@ -256,7 +264,7 @@ function safeJson(t) { try { return JSON.parse(t); } catch { return {}; } }
 
 /** Minutos de los últimos `n` partidos de un equipo, por jugador (para sugerir titulares). */
 export function minutosRecientes(db, equipoId, n = 5) {
-  const partidos = db.all(`SELECT partido_id FROM partidos WHERE local_id=? OR visitante_id=? ORDER BY fecha DESC LIMIT ?`, [equipoId, equipoId, n]).map((p) => p.partido_id);
+  const partidos = db.all(`SELECT partido_id FROM partidos WHERE (local_id=? OR visitante_id=?) AND partido_id NOT LIKE 'directo-%' ORDER BY fecha DESC LIMIT ?`, [equipoId, equipoId, n]).map((p) => p.partido_id);
   if (!partidos.length) return new Map();
   const marcas = partidos.map(() => "?").join(",");
   const filas = db.all(`SELECT COALESCE(jugador_id, dorsal) AS clave, SUM(COALESCE(segundos,0)) AS seg, COUNT(*) AS n
@@ -274,7 +282,7 @@ export function scoutingEquipo(db, equipoId) {
   const t2 = tiros.filter((t) => t.puntos === 2), t3 = tiros.filter((t) => t.puntos === 3);
   const a = (l) => l.filter((t) => t.resultado === "acierto").length;
   const partidos = db.all(`SELECT partido_id,fecha,equipo_local,equipo_visitante,pts_local,pts_visitante,local_id,visitante_id
-    FROM partidos WHERE local_id=? OR visitante_id=? ORDER BY fecha DESC LIMIT 5`, [equipoId, equipoId]);
+    FROM partidos WHERE (local_id=? OR visitante_id=?) AND partido_id NOT LIKE 'directo-%' ORDER BY fecha DESC LIMIT 5`, [equipoId, equipoId]);
   return {
     clas, jugadores, tiros, partidos,
     resumen: { n: tiros.length, t2i: t2.length, t2a: a(t2), t3i: t3.length, t3a: a(t3), pct2: pct(a(t2), t2.length), pct3: pct(a(t3), t3.length) },
@@ -319,8 +327,8 @@ export function exportarSesion(db, sesion, proy, eventos, { ahora = selloLocal()
       equipo_local_id,equipo_local,equipo_visitante_id,equipo_visitante,pabellon,estado,cuarto,tipo_periodo,reloj_seg,
       pts_local,pts_visitante,inicio,fin,app_version,creado) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, [
       sesion.uid, partidoId, sesion.grupoDb || "", sesion.competicion || "", sesion.grupo || "", sesion.temporada || "",
-      sesion.jornada || "", sesion.fecha || "", sesion.local?.equipoId || null, sesion.local?.nombre || "",
-      sesion.visitante?.equipoId || null, sesion.visitante?.nombre || "", sesion.pabellon || "", sesion.estado || "en_curso",
+      sesion.jornada || "", sesion.fecha || "", idEquipoFEB(sesion, "local"), sesion.local?.nombre || "",
+      idEquipoFEB(sesion, "visitante"), sesion.visitante?.nombre || "", sesion.pabellon || "", sesion.estado || "en_curso",
       proy.cuarto, proy.tipoPeriodo, proy.reloj, proy.pts.local, proy.pts.visitante, sesion.inicio || "", sesion.fin || null,
       APP_VERSION, sesion.creado || ahora,
     ]);
@@ -333,7 +341,7 @@ export function exportarSesion(db, sesion, proy, eventos, { ahora = selloLocal()
         if (vistos.has(String(j.dorsal))) continue;
         vistos.add(String(j.dorsal));
         jugadores.push({
-          sesion_uid: sesion.uid, equipo_lado: lado, equipo_id: eq.equipoId || null, equipo: eq.nombre,
+          sesion_uid: sesion.uid, equipo_lado: lado, equipo_id: idEquipoFEB(sesion, lado), equipo: eq.nombre,
           jugador_id: j.jugadorId || null, dorsal: String(j.dorsal), nombre: j.nombre, titular: j.titular ? 1 : 0, orden: j.orden ?? null,
         });
       }
@@ -384,13 +392,13 @@ export function exportarSesion(db, sesion, proy, eventos, { ahora = selloLocal()
         vistos.add(dorsal);
         const st = proy.jugadores[lado][dorsal] || statsVacias();
         filasBox.push({
-          sesion_uid: sesion.uid, equipo_lado: lado, equipo_id: eq.equipoId || null, equipo: eq.nombre,
+          sesion_uid: sesion.uid, equipo_lado: lado, equipo_id: idEquipoFEB(sesion, lado), equipo: eq.nombre,
           jugador_id: j.jugadorId || null, dorsal, nombre: j.nombre, titular: j.titular ? 1 : 0,
           ...columnasJugador(st),
         });
       }
       filasEq.push({
-        sesion_uid: sesion.uid, equipo_lado: lado, equipo_id: eq.equipoId || null, equipo: eq.nombre,
+        sesion_uid: sesion.uid, equipo_lado: lado, equipo_id: idEquipoFEB(sesion, lado), equipo: eq.nombre,
         ...columnasEquipo(proy.equipos[lado]),
       });
     }
@@ -399,25 +407,26 @@ export function exportarSesion(db, sesion, proy, eventos, { ahora = selloLocal()
 
     // 3) Tiros en directo en `tiros` (columnas aditivas). Solo se sustituyen los de ESTA sesión.
     db.run("DELETE FROM tiros WHERE sesion_uid=?", [sesion.uid]);
-    const filasT = [];
+    const filasT = [], filasDT = [];
     for (const lado of LADOS) {
       const eq = sesion[lado];
       for (const t of proy.tiros.filter((x) => x.lado === lado && x.Xinv != null && x.Yinv != null)) {
         filasT.push({
-          partido_id: partidoId, equipo: eq.nombre, jugador: t.nombre, dorsal: t.dorsal, cuarto: t.cuarto,
+          partido_id: partidoId, equipo: nombreEquipoFEB(sesion, lado), jugador: t.nombre, dorsal: t.dorsal, cuarto: t.cuarto,
           resultado: t.resultado, X: t.X, Y: t.Y, Xinv: t.Xinv, Yinv: t.Yinv, fuente: "directo", confianza_deteccion: 1,
-          jugador_id: t.jugadorId || null, equipo_id: eq.equipoId || null, tiempo: segAMinutos(t.tiempoRestante),
+          jugador_id: t.jugadorId || null, equipo_id: idEquipoFEB(sesion, lado), tiempo: segAMinutos(t.tiempoRestante),
           tiempo_seg: Math.round(t.tiempoRestante), puntos: t.puntos, evento_uid: t.eventoUid || t.uid, sesion_uid: sesion.uid,
+        });
+        filasDT.push({
+          sesion_uid: sesion.uid, evento_uid: t.eventoUid || t.uid, equipo_lado: lado, partido_id: partidoId,
+          equipo: eq.nombre, equipo_id: idEquipoFEB(sesion, lado), jugador: t.nombre, jugador_id: t.jugadorId || null,
+          dorsal: t.dorsal, cuarto: t.cuarto, resultado: t.resultado, X: t.X, Y: t.Y, Xinv: t.Xinv, Yinv: t.Yinv,
+          puntos: t.puntos, tiempo_seg: Math.round(t.tiempoRestante),
         });
       }
     }
     db.insertar("tiros", filasT);
-    db.insertar("directo_tiros", filasT.map((t, i) => ({
-      sesion_uid: t.sesion_uid, evento_uid: t.evento_uid, equipo_lado: t.equipo === sesion.local.nombre ? "local" : "visitante",
-      partido_id: t.partido_id, equipo: t.equipo, equipo_id: t.equipo_id, jugador: t.jugador, jugador_id: t.jugador_id,
-      dorsal: t.dorsal, cuarto: t.cuarto, resultado: t.resultado, X: t.X, Y: t.Y, Xinv: t.Xinv, Yinv: t.Yinv,
-      puntos: t.puntos, tiempo_seg: t.tiempo_seg,
-    })));
+    db.insertar("directo_tiros", filasDT);
 
     // 4) Si es un amistoso (o el partido no estaba en la base), se añade a las tablas FEB.
     escribirPartidoFEB(db, sesion, proy);
@@ -477,7 +486,7 @@ function escribirPartidoFEB(db, sesion, proy) {
       parciales,local_id,visitante_id,estado,cuartos,datos_v) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, [
       pid, sesion.competicion || "", sesion.jornada || "", sesion.fecha || selloLocal().slice(0, 16), null,
       sesion.local.nombre, sesion.visitante.nombre, proy.pts.local, proy.pts.visitante, JSON.stringify(parciales),
-      sesion.local.equipoId || null, sesion.visitante.equipoId || null, proy.estado === "final" ? "Final" : "En juego",
+      idEquipoFEB(sesion, "local"), idEquipoFEB(sesion, "visitante"), proy.estado === "final" ? "Final" : "En juego",
       proy.periodos.length, 2,
     ]);
   }
@@ -493,14 +502,14 @@ function escribirPartidoFEB(db, sesion, proy) {
       vistos.add(dorsal);
       const st = proy.jugadores[lado][dorsal] || statsVacias();
       filasJ.push({
-        partido_id: pid, equipo: eq.nombre, jugador: j.nombre, dorsal, titular: j.titular ? 1 : 0,
-        ...columnasJugador(st), jugador_id: j.jugadorId || null, equipo_id: eq.equipoId || null,
+        partido_id: pid, equipo: nombreEquipoFEB(sesion, lado), jugador: j.nombre, dorsal, titular: j.titular ? 1 : 0,
+        ...columnasJugador(st), jugador_id: j.jugadorId || null, equipo_id: idEquipoFEB(sesion, lado),
         capitan: null, sta: null, ind: null,
       });
     }
     const st = proy.equipos[lado];
     filasE.push({
-      partido_id: pid, equipo: eq.nombre, equipo_id: eq.equipoId || "", indice: null,
+      partido_id: pid, equipo: nombreEquipoFEB(sesion, lado), equipo_id: idEquipoFEB(sesion, lado), indice: null,
       ...columnasEquipo(st),
       contraataque: null, pts_tras_perdida: null, pts_segunda_oportunidad: null, pts_banquillo: null, pts_pintura: null,
       faltas: st.faltas,

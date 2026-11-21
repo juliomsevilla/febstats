@@ -1,84 +1,176 @@
-// Nuevo partido: elegir grupo, partido oficial o amistoso y confirmar plantillas/titulares.
+// Nuevo partido: partido oficial de la FEB, o equipos libres (del JSON o creados desde cero).
 import { h, limpiar, btn, icono, toast, fechaCorta, jornadaTexto, dialogo } from "../util.js";
 import { crearCancha } from "../court.js";
 import { app, abrirGrupo, nuevaSesion } from "../estado.js";
 import { listarPartidos, plantillaDe, minutosRecientes, equiposDe, scoutingEquipo } from "../grupo.js";
 import { navegar } from "../app.js";
 
+const DEF_DORSALES = "4,5,6,7,8,9,10,11,12,13,14,15";
+const LADOS = ["local", "visitante"];
+const NOMBRE_DEF = { local: "EQUIPO LOCAL", visitante: "EQUIPO VISITANTE" };
+
 export function vistaNuevo(cont) {
   const st = {
     grupoId: app.grupoId || app.grupos[0]?.id || "",
     modo: "oficial",
     partido: null,
-    localId: "", localNombre: "", visitanteId: "", visitanteNombre: "",
+    fuente: { local: "nuevo", visitante: "nuevo" },
+    ids: { local: "", visitante: "" },
+    nombres: { ...NOMBRE_DEF },
+    manualNombre: { ...NOMBRE_DEF },
+    manual: { local: { dorsales: DEF_DORSALES, nombres: "" }, visitante: { dorsales: DEF_DORSALES, nombres: "" } },
     plantilla: { local: [], visitante: [] },
     titulares: new Set(),
-    rivalManual: "4,5,6,7,8,9,10,11,12,13,14,15",
-    rivalNombres: "",
     buscar: "",
     cargando: false,
     equipos: [],
     partidos: [],
+    competicion: "",
+    grupo: "",
+    temporada: "",
   };
   const cuerpo = h("div", { class: "nuevo" });
   cont.append(cuerpo);
 
   if (!app.grupos.length) {
-    cuerpo.append(h("div", { class: "vacio" }, h("strong", { text: "Primero importa los datos" }), h("p", { text: "Necesitas el archivo FEBstats-iPad.json para crear un partido." }),
+    cuerpo.append(h("div", { class: "vacio" },
+      h("strong", { text: "Primero importa los datos" }),
+      h("p", { text: "Necesitas un grupo de FEBstats para guardar el partido y exportar el .db. Después podrás usar equipos del JSON o crear equipos nuevos." }),
       btn("Ir a importar", () => navegar("inicio"), { clase: "btn primario", icon: "importar" })));
     return null;
   }
 
   const pintar = () => { limpiar(cuerpo); construir(); };
 
+  // ---------------- equipos ----------------
+
+  function jugadoresManual(lado) {
+    const ds = String(st.manual[lado].dorsales || "").split(/[,\s;]+/).map((x) => x.trim()).filter(Boolean);
+    const ns = String(st.manual[lado].nombres || "").split("\n").map((x) => x.trim());
+    const vistos = new Set();
+    return ds.filter((d) => { if (vistos.has(d)) return false; vistos.add(d); return true; })
+      .slice(0, 20)
+      .map((d, i) => ({ dorsal: d, nombre: ns[i] || `#${d}`, jugadorId: null, minutos: 0 }));
+  }
+
+  function limpiarTitulares(lado) {
+    for (const k of [...st.titulares]) if (k.startsWith(lado + ":")) st.titulares.delete(k);
+  }
+
+  function aplicarManual(lado) {
+    st.plantilla[lado] = jugadoresManual(lado);
+    const validos = new Set(st.plantilla[lado].map((j) => j.dorsal));
+    const tit = new Set();
+    for (const k of st.titulares) {
+      if (!k.startsWith(lado + ":")) continue;
+      const d = k.slice(lado.length + 1);
+      if (validos.has(d)) tit.add(d);
+    }
+    // Al cambiar la lista se conservan los titulares que sigan existiendo y se
+    // completa hasta 5 con los primeros disponibles.
+    for (const j of st.plantilla[lado]) { if (tit.size >= 5) break; tit.add(j.dorsal); }
+    limpiarTitulares(lado);
+    for (const d of tit) st.titulares.add(`${lado}:${d}`);
+  }
+
+  async function cargarPlantilla(lado, equipoId) {
+    limpiarTitulares(lado);
+    if (!equipoId) { st.plantilla[lado] = []; return; }
+    const db = await abrirGrupo(st.grupoId);
+    const min = minutosRecientes(db, equipoId, 5);
+    const filas = plantillaDe(db, equipoId).map((j) => ({
+      dorsal: String(j.dorsal || ""), nombre: j.jugador || j.nombre || `#${j.dorsal}`, jugadorId: j.jugador_id || null,
+      minutos: min.get(String(j.jugador_id || j.dorsal))?.seg || 0,
+    })).filter((j) => j.dorsal);
+    // Dorsales repetidos en la FEB: se queda el que más ha jugado (el boxscore exige dorsal único).
+    const porDorsal = new Map();
+    for (const j of filas.sort((a, b) => b.minutos - a.minutos)) if (!porDorsal.has(j.dorsal)) porDorsal.set(j.dorsal, j);
+    st.plantilla[lado] = [...porDorsal.values()].sort((a, b) => (+a.dorsal || 999) - (+b.dorsal || 999) || a.dorsal.localeCompare(b.dorsal));
+    for (const j of [...st.plantilla[lado]].sort((a, b) => b.minutos - a.minutos).slice(0, 5)) st.titulares.add(`${lado}:${j.dorsal}`);
+  }
+
+  async function elegirFuente(lado, valor) {
+    if (valor === "") {
+      st.fuente[lado] = "nuevo";
+      st.ids[lado] = "";
+      st.nombres[lado] = st.manualNombre[lado] || NOMBRE_DEF[lado];
+      limpiarTitulares(lado);
+      aplicarManual(lado);
+      pintar();
+      return;
+    }
+    st.fuente[lado] = "json";
+    st.ids[lado] = valor;
+    st.nombres[lado] = st.equipos.find((e) => e.equipo_id === valor)?.nombre || "";
+    await cargarPlantilla(lado, valor);
+    pintar();
+  }
+
+  function resetEquipos() {
+    st.partido = null;
+    st.fuente = { local: "nuevo", visitante: "nuevo" };
+    st.ids = { local: "", visitante: "" };
+    st.nombres = { ...NOMBRE_DEF };
+    st.manualNombre = { ...NOMBRE_DEF };
+    st.manual = { local: { dorsales: DEF_DORSALES, nombres: "" }, visitante: { dorsales: DEF_DORSALES, nombres: "" } };
+    st.plantilla = { local: [], visitante: [] };
+    st.titulares.clear();
+    aplicarManual("local");
+    aplicarManual("visitante");
+  }
+
   async function cargarGrupo() {
     const db = await abrirGrupo(st.grupoId);
     st.equipos = equiposDe(db);
-    st.partidos = listarPartidos(db);
+    st.partidos = listarPartidos(db, { soloOficiales: true });
     const r = app.grupos.find((g) => g.id === st.grupoId)?.resumen || {};
-    st.competicion = r.competicion; st.grupo = r.grupo; st.temporada = r.temporada;
+    st.competicion = r.competicion || ""; st.grupo = r.grupo || ""; st.temporada = r.temporada || "";
     pintar();
   }
 
-  async function cargarPlantillas() {
-    st.plantilla = { local: [], visitante: [] };
-    st.titulares = new Set();
-    if (!st.localId && !st.localNombre) return;
-    const db = await abrirGrupo(st.grupoId);
-    for (const lado of ["local", "visitante"]) {
-      const id = lado === "local" ? st.localId : st.visitanteId;
-      if (!id) continue;
-      const p = plantillaDe(db, id);
-      const min = minutosRecientes(db, id, 5);
-      const filas = p.map((j) => ({
-        dorsal: String(j.dorsal || ""), nombre: j.jugador || j.nombre || `#${j.dorsal}`, jugadorId: j.jugador_id || null,
-        minutos: min.get(String(j.jugador_id || j.dorsal))?.seg || 0,
-      })).filter((j) => j.dorsal);
-      // La FEB puede traer dos jugadores con el mismo dorsal (temporadas mezcladas).
-      // Se queda el que más ha jugado: el boxscore exige dorsal único por equipo.
-      const porDorsal = new Map();
-      for (const j of filas.sort((a, b) => b.minutos - a.minutos)) if (!porDorsal.has(j.dorsal)) porDorsal.set(j.dorsal, j);
-      st.plantilla[lado] = [...porDorsal.values()].sort((a, b) => (+a.dorsal || 999) - (+b.dorsal || 999) || a.dorsal.localeCompare(b.dorsal));
-      const top = [...st.plantilla[lado]].sort((a, b) => b.minutos - a.minutos).slice(0, 5);
-      for (const j of top) st.titulares.add(`${lado}:${j.dorsal}`);
+  async function seleccionarPartido(p) {
+    try {
+      st.modo = "oficial";
+      st.partido = p;
+      st.fuente = { local: "json", visitante: "json" };
+      st.ids = { local: p.local_id ? String(p.local_id) : "", visitante: p.visitante_id ? String(p.visitante_id) : "" };
+      st.nombres = { local: p.equipo_local || "", visitante: p.equipo_visitante || "" };
+      st.titulares.clear();
+      await cargarPlantilla("local", p.local_id);
+      await cargarPlantilla("visitante", p.visitante_id);
+      pintar();
+    } catch (e) {
+      console.error(e); toast("No se pudo cargar el partido: " + e.message, "error");
     }
-    pintar();
   }
 
-  function seleccionarPartido(p) {
-    st.partido = p;
-    const invertir = st.invertir;
-    st.localId = invertir ? p.visitante_id : p.local_id;
-    st.visitanteId = invertir ? p.local_id : p.visitante_id;
-    st.localNombre = invertir ? p.equipo_visitante : p.equipo_local;
-    st.visitanteNombre = invertir ? p.equipo_local : p.equipo_visitante;
-    cargarPlantillas();
+  // ---------------- interfaz ----------------
+
+  function rosterConfig(lado) {
+    const select = h("select", { onchange: (e) => elegirFuente(lado, e.target.value) },
+      h("option", { value: "", selected: st.fuente[lado] !== "json", text: "Equipo nuevo (sin datos)" }),
+      st.equipos.map((e) => h("option", { value: e.equipo_id, selected: st.fuente[lado] === "json" && st.ids[lado] === e.equipo_id, text: e.nombre })));
+
+    const campos = st.fuente[lado] === "nuevo" ? [
+      h("label", null, h("span", { text: "Nombre del equipo" }),
+        h("input", { type: "text", value: st.nombres[lado], placeholder: NOMBRE_DEF[lado], oninput: (e) => { st.nombres[lado] = e.target.value; st.manualNombre[lado] = e.target.value; } })),
+      h("label", null, h("span", { text: "Dorsales" }),
+        h("input", { type: "text", value: st.manual[lado].dorsales, placeholder: DEF_DORSALES, oninput: (e) => { st.manual[lado].dorsales = e.target.value; } })),
+      h("label", null, h("span", { text: "Nombres (opcional, uno por línea)" }),
+        h("textarea", { rows: 3, value: st.manual[lado].nombres, placeholder: "En el mismo orden que los dorsales", oninput: (e) => { st.manual[lado].nombres = e.target.value; } })),
+      h("div", { class: "acciones" },
+        btn("Aplicar plantilla", () => { aplicarManual(lado); pintar(); }, { clase: "btn pequeno", icon: "importado" }),
+        h("span", { class: "sub", text: `${st.plantilla[lado].length} jugadores` })),
+    ] : [h("p", { class: "sub", text: "Plantilla cargada del JSON." })];
+
+    return h("div", { class: "roster-config" },
+      h("label", null, h("span", { text: "Equipo" }), select),
+      campos);
   }
 
-  function rosterCard(lado) {
-    const jugadores = st.plantilla[lado];
-    const equipo = lado === "local" ? st.localNombre : st.visitanteNombre;
-    const manual = st.modo === "amistoso" && lado === "visitante" && !st.visitanteId;
+  function rosterCard(lado, editable) {
+    const jugadores = st.plantilla[lado] || [];
+    const nombre = st.nombres[lado] || NOMBRE_DEF[lado];
     const tit = [...st.titulares].filter((t) => t.startsWith(lado + ":")).length;
     const lista = jugadores.map((j) => {
       const on = st.titulares.has(`${lado}:${j.dorsal}`);
@@ -94,50 +186,31 @@ export function vistaNuevo(cont) {
         } },
           h("span", { class: "dorsal", text: `#${j.dorsal}` }),
           h("span", { class: "nombre", text: j.nombre }),
-          on ? h("span", { class: "pill ok", text: "Titular" }) : null),
-      );
+          on ? h("span", { class: "pill ok", text: "Titular" }) : null));
     });
-    return h("article", { class: "card roster" + (lado === "local" ? " local" : " visitante") },
+    return h("article", { class: "card roster " + lado },
       h("div", { class: "roster-cab" },
-        h("div", null, h("h3", { text: equipo || "Sin equipo" }), h("p", { class: "sub", text: `${lado === "local" ? "Local" : "Visitante"} · ${tit} titulares` })),
+        h("div", null, h("h3", { text: nombre }), h("p", { class: "sub", text: `${lado === "local" ? "Local" : "Visitante"} · ${tit} titulares` })),
         h("span", { class: "pill", text: `${jugadores.length} jug.` })),
-      manual ? rosterManual() : null,
-      manual ? null : (jugadores.length
+      editable ? rosterConfig(lado) : null,
+      jugadores.length
         ? h("ul", { class: "roster-lista" }, lista)
-        : h("p", { class: "sub", text: "No hay plantilla en los datos. Añade dorsales abajo." })),
-      manual ? null : rosterExtra(lado),
-    );
+        : h("p", { class: "sub", text: st.fuente[lado] === "nuevo" ? "Sin jugadores. Escribe dorsales y pulsa «Aplicar plantilla»." : "Ese equipo no tiene plantilla en el JSON." }));
   }
 
-  function rosterManual() {
-    return h("div", { class: "roster-manual" },
-      h("label", null, h("span", { text: "Dorsales del rival" }),
-        h("input", { type: "text", value: st.rivalManual, placeholder: "4,5,6,7,8,9,10,11,12,13,14,15", oninput: (e) => {
-          st.rivalManual = e.target.value;
-          st.plantilla.visitante = dorsalesManual(e.target.value, st.rivalNombres);
-        } })),
-      h("label", null, h("span", { text: "Nombres (opcional, uno por línea)" }),
-        h("textarea", { rows: 3, value: st.rivalNombres, placeholder: "Uno por línea, en el mismo orden que los dorsales", oninput: (e) => {
-          st.rivalNombres = e.target.value;
-          st.plantilla.visitante = dorsalesManual(st.rivalManual, st.rivalNombres);
-        } })),
-      h("p", { class: "sub", text: `${st.plantilla.visitante.length} jugadores` }));
-  }
-
-  function rosterExtra(lado) {
-    if (st.modo !== "amistoso" || lado !== "visitante" || st.visitanteId) return null;
-    return null;
+  function introLibre() {
+    return h("section", { class: "seccion" },
+      h("div", { class: "seccion-cab" }, h("h2", { text: "Equipos libres" }), h("span", { class: "pill", text: "Del JSON o nuevos" })),
+      h("p", { class: "sub", text: "Para cada lado puedes elegir un equipo cargado del JSON (con su plantilla e informe) o crear uno nuevo con sus dorsales." }));
   }
 
   function seccionScouting() {
-    if (!st.localId && !st.visitanteId) return null;
+    const lados = LADOS.filter((l) => st.fuente[l] === "json" && st.ids[l]);
+    if (!lados.length) return null;
     return h("section", { class: "seccion" },
       h("div", { class: "seccion-cab" }, h("h2", { text: "Informe de scouting" }), h("span", { class: "pill", text: "Temporada · tiros y perfiles del paquete" })),
-      h("div", { class: "rejilla dos" }, ["local", "visitante"].map((lado) => {
-        const id = lado === "local" ? st.localId : st.visitanteId;
-        const nombre = lado === "local" ? st.localNombre : st.visitanteNombre;
-        if (!id) return null;
-        try { return tarjetaScouting(lado, id, nombre); } catch (e) { console.error(e); return null; }
+      h("div", { class: "rejilla dos" }, lados.map((lado) => {
+        try { return tarjetaScouting(lado, st.ids[lado], st.nombres[lado]); } catch (e) { console.error(e); return null; }
       })));
   }
 
@@ -146,7 +219,6 @@ export function vistaNuevo(cont) {
     const c = inf.clas || {};
     const cancha = crearCancha({ interactiva: false });
     cancha.pintarTiros(inf.tiros.slice(0, 900));
-    const jug = inf.jugadores.slice(0, 5);
     return h("article", { class: "card scouting " + lado },
       h("div", { class: "bt-cab" },
         h("div", null, h("h3", { text: nombre }), h("p", { class: "sub", text: `${c.pj ?? "—"} partidos · ${c.pg ?? "—"}V ${c.pp ?? "—"}D` })),
@@ -159,7 +231,7 @@ export function vistaNuevo(cont) {
         dato("TS%", c.ts_pct != null ? Number(c.ts_pct).toFixed(1) + "%" : "—"),
         dato("Tiros", String(inf.resumen.n))),
       h("div", { class: "scout-jugadores" },
-        jug.map((j) => h("div", { class: "scout-jug" },
+        inf.jugadores.slice(0, 5).map((j) => h("div", { class: "scout-jug" },
           h("span", { class: "dorsal", text: `#${j.dorsal}` }),
           h("span", { class: "nombre", text: j.nombre }),
           h("span", { class: "perfil", text: j.perfil || j.rol || "" }),
@@ -172,15 +244,19 @@ export function vistaNuevo(cont) {
 
   const dato = (l, v) => h("div", { class: "scout-dato" }, h("span", { text: l }), h("b", { text: v }));
 
-  function dorsalesManual(txt, nombres) {
-    const ds = String(txt || "").split(/[,\s;]+/).map((x) => x.trim()).filter(Boolean);
-    const ns = String(nombres || "").split("\n").map((x) => x.trim());
-    return [...new Set(ds)].slice(0, 20).map((d, i) => ({ dorsal: d, nombre: ns[i] || `#${d}`, jugadorId: null, minutos: 0 }));
-  }
+  // ---------------- empezar ----------------
 
   async function empezar() {
-    if (!st.localNombre || !st.visitanteNombre) { toast("Elige los dos equipos.", "aviso"); return; }
-    if (st.modo === "amistoso" && !st.visitanteId) st.plantilla.visitante = dorsalesManual(st.rivalManual, st.rivalNombres);
+    const p = st.modo === "oficial" ? st.partido : null;
+    if (st.modo === "oficial" && !p) { toast("Elige un partido de la lista.", "aviso"); return; }
+    for (const lado of LADOS) {
+      if (st.fuente[lado] === "nuevo") aplicarManual(lado);
+      st.nombres[lado] = String(st.nombres[lado] || "").trim();
+      if (!st.nombres[lado]) { toast(`Pon un nombre al equipo ${lado}.`, "aviso"); return; }
+      if (!st.plantilla[lado].length) { toast(`Añade dorsales al equipo ${lado}.`, "aviso"); return; }
+    }
+    if (st.nombres.local.toLowerCase() === st.nombres.visitante.toLowerCase()) { toast("Los dos equipos deben tener nombres distintos.", "aviso"); return; }
+
     const jug = (lado) => {
       const lista = st.plantilla[lado] || [];
       const tieneTit = lista.some((j) => st.titulares.has(`${lado}:${j.dorsal}`));
@@ -198,13 +274,14 @@ export function vistaNuevo(cont) {
     }
     st.cargando = true; pintar();
     try {
-      const p = st.partido;
       await nuevaSesion({
         grupoId: st.grupoId, partido: p,
-        local: { equipoId: st.localId || null, nombre: st.localNombre, jugadores: jug("local") },
-        visitante: { equipoId: st.visitanteId || null, nombre: st.visitanteNombre, jugadores: jug("visitante") },
-        competicion: st.competicion || "", grupo: st.grupo || "", temporada: st.temporada || "",
-        jornada: p?.jornada || (st.modo === "amistoso" ? "Amistoso" : ""),
+        local: { equipoId: st.fuente.local === "json" ? st.ids.local || null : null, nombre: st.nombres.local, jugadores: jug("local") },
+        visitante: { equipoId: st.fuente.visitante === "json" ? st.ids.visitante || null : null, nombre: st.nombres.visitante, jugadores: jug("visitante") },
+        competicion: p ? st.competicion : "AMISTOSO",
+        grupo: p ? st.grupo : "Amistoso",
+        temporada: st.temporada,
+        jornada: p?.jornada || "",
         fecha: p?.fecha || new Date().toISOString().slice(0, 16).replace("T", " "),
       });
       navegar("partido");
@@ -213,42 +290,51 @@ export function vistaNuevo(cont) {
     }
   }
 
+  // ---------------- construir ----------------
+
   function construir() {
     const grupos = app.grupos.length > 1
       ? h("div", { class: "campo" }, h("label", { text: "Grupo de datos" }),
-        h("select", { onchange: async (e) => { st.grupoId = e.target.value; st.partido = null; st.localId = st.visitanteId = ""; st.localNombre = st.visitanteNombre = ""; await cargarGrupo(); } },
+        h("select", { onchange: async (e) => { st.grupoId = e.target.value; resetEquipos(); await cargarGrupo(); } },
           app.grupos.map((g) => h("option", { value: g.id, selected: g.id === st.grupoId, text: `${g.resumen?.competicion} · ${g.resumen?.grupo} ${g.resumen?.temporada}` }))))
       : null;
 
     const seg = h("div", { class: "seg" },
       h("button", { type: "button", class: st.modo === "oficial" ? "on" : "", onclick: () => { st.modo = "oficial"; pintar(); } }, "Partido oficial"),
-      h("button", { type: "button", class: st.modo === "amistoso" ? "on" : "", onclick: () => { st.modo = "amistoso"; st.partido = null; st.localId = ""; st.localNombre = ""; st.visitanteId = ""; st.visitanteNombre = ""; pintar(); } }, "Amistoso"));
+      h("button", { type: "button", class: st.modo === "libre" ? "on" : "", onclick: () => { st.modo = "libre"; st.partido = null; pintar(); } }, "Equipos libres"));
 
-    const selector = st.modo === "oficial" ? listaPartidos() : amistoso();
+    const selector = st.modo === "oficial" ? listaPartidos() : introLibre();
+    const editable = st.modo === "libre";
+    const mostrarPlantillas = editable || !!st.partido;
 
-    const rosters = (st.localNombre || st.visitanteNombre) ? h("section", { class: "seccion" },
-      h("div", { class: "seccion-cab" }, h("h2", { text: "Plantillas y titulares" }), h("span", { class: "pill", text: "Toca para marcar los 5 iniciales" })),
-      h("div", { class: "rejilla dos" }, rosterCard("local"), rosterCard("visitante")),
-      seccionScouting(),
-      h("div", { class: "acciones centradas" },
-        btn("Intercambiar local/visitante", async () => {
-          [st.localId, st.visitanteId] = [st.visitanteId, st.localId];
-          [st.localNombre, st.visitanteNombre] = [st.visitanteNombre, st.localNombre];
-          [st.plantilla.local, st.plantilla.visitante] = [st.plantilla.visitante, st.plantilla.local];
-          const tits = new Set();
-          for (const t of st.titulares) { const [l, d] = t.split(":"); tits.add(`${l === "local" ? "visitante" : "local"}:${d}`); }
-          st.titulares = tits;
-          pintar();
-        }, { clase: "btn", icon: "cambiar" }),
-        btn(st.cargando ? "Creando…" : "Empezar partido", empezar, { clase: "btn primario grande", icon: "play", disabled: st.cargando }))) : null;
+    const plantillas = mostrarPlantillas
+      ? h("section", { class: "seccion" },
+        h("div", { class: "seccion-cab" }, h("h2", { text: "Plantillas y titulares" }), h("span", { class: "pill", text: "Toca para marcar los 5 iniciales" })),
+        h("div", { class: "rejilla dos" }, rosterCard("local", editable), rosterCard("visitante", editable)),
+        seccionScouting(),
+        h("div", { class: "acciones centradas" },
+          btn("Intercambiar local/visitante", () => {
+            for (const k of ["fuente", "ids", "nombres", "manualNombre", "manual", "plantilla"]) {
+              [st[k].local, st[k].visitante] = [st[k].visitante, st[k].local];
+            }
+            const tits = new Set();
+            for (const t of st.titulares) { const [l, d] = t.split(":"); tits.add(`${l === "local" ? "visitante" : "local"}:${d}`); }
+            st.titulares = tits;
+            pintar();
+          }, { clase: "btn", icon: "cambiar" }),
+          btn(st.cargando ? "Creando…" : "Empezar partido", empezar, { clase: "btn primario grande", icon: "play", disabled: st.cargando })))
+      : h("section", { class: "seccion" },
+        h("div", { class: "card" }, h("p", { class: "sub", text: "Elige un partido de la lista de arriba para cargar sus equipos y plantillas." })));
 
     cuerpo.append(
       h("div", { class: "nuevo-cab" },
-        h("div", null, h("h1", { text: "Nuevo partido" }), h("p", { class: "sub", text: "Elige el partido, confirma las plantillas y marca los titulares." })),
+        h("div", null,
+          h("h1", { text: "Nuevo partido" }),
+          h("p", { class: "sub", text: "Partido oficial de la FEB, o equipos libres: del JSON o creados desde cero." })),
         h("div", { class: "filtros" }, grupos, seg)),
       selector,
-      rosters,
-      h("p", { class: "nota-pie", text: "Si el partido no está en la FEB, crea un amistoso: el rival se gestiona por dorsal y el nombre es opcional." }),
+      plantillas,
+      h("p", { class: "nota-pie", text: "Un equipo del JSON usa su plantilla y su informe de scouting. Un equipo nuevo se gestiona por dorsal; el nombre es obligatorio y los nombres de jugador son opcionales." }),
     );
   }
 
@@ -264,7 +350,7 @@ export function vistaNuevo(cont) {
       h("div", { class: "seccion-cab" },
         h("h2", { text: "Partidos" }),
         h("div", { class: "buscador" }, icono("buscar"), h("input", { type: "search", placeholder: "Equipo o fecha…", value: st.buscar, oninput: (e) => { st.buscar = e.target.value; const lista = cuerpo.querySelector(".lista-partidos"); if (lista) pintarLista(lista); } }))),
-      (st.localNombre ? h("p", { class: "sub", text: `Elegido: ${st.localNombre} vs ${st.visitanteNombre}` }) : null),
+      st.partido ? h("p", { class: "sub", text: `Elegido: ${st.partido.equipo_local} vs ${st.partido.equipo_visitante}` }) : null,
       h("div", { class: "lista-partidos" }, filas.length ? filas : h("p", { class: "sub", text: "No hay partidos con ese filtro." })));
   }
 
@@ -282,25 +368,7 @@ export function vistaNuevo(cont) {
     }
   }
 
-  function amistoso() {
-    const opciones = st.equipos.map((e) => h("option", { value: e.equipo_id, text: e.nombre, selected: e.nombre === st.localNombre }));
-    return h("section", { class: "seccion" },
-      h("div", { class: "seccion-cab" }, h("h2", { text: "Amistoso" })),
-      h("div", { class: "rejilla dos" },
-        h("article", { class: "card" },
-          h("h3", { text: "Mi equipo" }),
-          h("select", { onchange: async (e) => {
-            const eq = st.equipos.find((x) => x.equipo_id === e.target.value);
-            st.localId = e.target.value; st.localNombre = eq?.nombre || "";
-            st.plantilla.visitante = dorsalesManual(st.rivalManual, st.rivalNombres);
-            await cargarPlantillas(); pintar();
-          } }, h("option", { value: "", text: "— Elige equipo —" }), opciones)),
-        h("article", { class: "card" },
-          h("h3", { text: "Rival" }),
-          h("input", { type: "text", placeholder: "Nombre del rival", value: st.visitanteNombre, oninput: (e) => { st.visitanteNombre = e.target.value; st.visitanteId = ""; } }),
-          h("p", { class: "sub", text: "Los dorsales se configuran debajo, en la tarjeta del visitante." }))));
-  }
-
+  resetEquipos();
   cargarGrupo();
   return null;
 }

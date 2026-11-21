@@ -466,3 +466,10 @@ select { max-width: 280px; }
 .scout-cancha { height: 230px; }
 .scout-cancha .cancha { height: 100%; }
 .scout-tiros { display: flex; justify-content: space-between; gap: 8px; font-size: 11.5px; color: var(--suave); }
+
+/* ---------- configuración de equipo (del JSON o nuevo) ---------- */
+.roster-config { display: flex; flex-direction: column; gap: 7px; margin: 4px 0 10px; padding-bottom: 8px; border-bottom: 1px dashed var(--borde); }
+.roster-config label { display: flex; flex-direction: column; gap: 3px; font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em; color: var(--suave); font-weight: 700; }
+.roster-config label select, .roster-config label input, .roster-config label textarea { text-transform: none; letter-spacing: 0; font-weight: 400; font-size: 13px; color: var(--texto); }
+.roster-config .acciones { margin-top: 1px; }
+.roster-cab h3 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
