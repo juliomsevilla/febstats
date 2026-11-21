@@ -69,8 +69,11 @@ export async function abrirGrupo(id) {
 }
 
 export function metaGrupoActual() {
+  // Se recalcula desde la base: así el contador del grupo no incluye los partidos
+  // amistosos ni los tiros del directo que se van añadiendo al exportar.
+  if (app.grupo) return resumenGrupo(app.grupo);
   const r = app.grupos.find((g) => g.id === app.grupoId);
-  return r?.resumen || resumenGrupo(app.grupo) || {};
+  return r?.resumen || {};
 }
 
 // ---------------- sesiones ----------------
