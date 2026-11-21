@@ -22,12 +22,6 @@ export function puntosDeTiro(xinv, yinv) {
   return triple ? 3 : 2;
 }
 
-export function hashTexto(t) {
-  let h1 = 0x811c9dc5;
-  for (let i = 0; i < t.length; i++) { h1 ^= t.charCodeAt(i); h1 = Math.imul(h1, 0x01000193); }
-  return (h1 >>> 0).toString(16).padStart(8, "0");
-}
-
 export function normalizarPaquete(json) {
   if (!json || json.formato !== "feb-stats-paquete") throw new Error("El archivo no es un paquete de FEBstats (formato «feb-stats-paquete»).");
   if (+json.version < 3) throw new Error(`Paquete versión ${json.version}: esta app necesita la versión 3 o superior.`);
@@ -37,7 +31,6 @@ export function normalizarPaquete(json) {
     generado: json.generado || "",
     version: +json.version,
     grupos: grupos.map((g) => ({ db: String(g.db || nombreDb(g.payload)), payload: g.payload })),
-    jugadas: Array.isArray(json.jugadas) ? json.jugadas : [],
     notas: Array.isArray(json.notas) ? json.notas : [],
     imagenes: Array.isArray(json.imagenes) ? json.imagenes : [],
   };
@@ -65,12 +58,11 @@ export function reemplazarPayload(db, payload, extras, dbId) {
 }
 
 function escribirPayload(db, payload, extras, dbId) {
-  // Base reemplazable: los datos FEB se sustituyen enteros; las tablas directo_* y el playbook se reescriben aparte.
+  // Base reemplazable: los datos FEB se sustituyen enteros; las tablas directo_* y las notas se reescriben aparte.
   for (const t of ["tiros", "jugador_stats", "equipo_stats", "partidos", "equipos", "equipos_info", "plantilla"]) db.run(`DELETE FROM ${t}`);
   db.run("DELETE FROM grupo_seguido");
   db.run("DELETE FROM directo_clasificacion");
   db.run("DELETE FROM directo_jugador_temporada");
-  db.run("DELETE FROM jugadas");
   db.run("DELETE FROM directo_notas");
   db.run("DELETE FROM directo_imagenes");
 
@@ -169,7 +161,7 @@ function escribirPayload(db, payload, extras, dbId) {
   }));
   db.insertar("directo_clasificacion", clas, { reemplazar: true });
 
-  // Playbook y notas del paquete.
+  // Notas e imágenes del paquete.
   if (extras) escribirExtras(db, extras);
 
   const meta = new Map([
@@ -181,24 +173,8 @@ function escribirPayload(db, payload, extras, dbId) {
 }
 
 export function escribirExtras(db, extras) {
-  db.run("DELETE FROM jugadas");
   db.run("DELETE FROM directo_notas");
   db.run("DELETE FROM directo_imagenes");
-  const jugadas = (extras.jugadas || []).map((j) => {
-    let datos = j.datos;
-    if (typeof datos === "string") { try { datos = JSON.parse(datos); } catch { /* se guarda tal cual */ } }
-    const datosTx = typeof datos === "string" ? datos : JSON.stringify(datos || {});
-    return {
-      id: ent(j.id), titulo: j.titulo || "Sin título", pista: j.pista || (datos && datos.pista) || "media",
-      datos: datosTx, texto: j.texto || "", descripcion: j.descripcion || "",
-      temporada: j.temporada || "", grupo: j.grupo || "", partido: j.partido || "", partido_txt: j.partido_txt || "",
-      equipo: j.equipo || "", equipo_txt: j.equipo_txt || "", jugador: j.jugador || "", jugador_txt: j.jugador_txt || "",
-      coleccion: j.coleccion || "", seccion: j.seccion || "", orden: ent(j.orden) ?? 0,
-      creado: j.creado || "", modificado: j.modificado || "",
-      uid: `j${j.id}_${hashTexto(datosTx)}`,
-    };
-  });
-  db.insertar("jugadas", jugadas, { reemplazar: true });
   const notas = (extras.notas || []).map((n) => ({
     id: String(n.id), titulo: n.titulo || "Sin título", cuerpo: n.cuerpo || "",
     temporada: n.temporada || "", grupo: n.grupo || "", partido: n.partido ? String(n.partido) : "", partido_txt: n.partido_txt || "",
@@ -231,8 +207,7 @@ export function resumenGrupo(db) {
     jugadores: db.valor("SELECT COUNT(*) FROM plantilla") || 0,
     partidos: db.valor("SELECT COUNT(*) FROM partidos WHERE partido_id NOT LIKE 'directo-%'") || 0,
     tiros: db.valor("SELECT COUNT(*) FROM tiros WHERE sesion_uid IS NULL") || 0,
-    jugadas: db.valor("SELECT COUNT(*) FROM jugadas") || 0,
-    notas: db.valor("SELECT COUNT(*) FROM directo_notas") || 0,
+    notas: (db.valor("SELECT COUNT(*) FROM directo_notas") || 0) + (db.valor("SELECT COUNT(*) FROM directo_eventos WHERE tipo='nota'") || 0),
   };
 }
 
@@ -289,15 +264,6 @@ export function scoutingEquipo(db, equipoId) {
   };
 }
 
-export function jugadasDe(db, { equipoId = "", texto = "" } = {}) {
-  const cond = [], par = [];
-  if (equipoId) { cond.push("(equipo=? OR equipo_txt=?)"); par.push(equipoId, equipoId); }
-  if (texto) { cond.push("(titulo LIKE ? OR descripcion LIKE ? OR texto LIKE ?)"); const t = `%${texto}%`; par.push(t, t, t); }
-  return db.all(`SELECT id,uid,titulo,pista,datos,texto,descripcion,temporada,grupo,partido,partido_txt,equipo,equipo_txt,jugador,jugador_txt,
-    coleccion,seccion,orden FROM jugadas ${cond.length ? "WHERE " + cond.join(" AND ") : ""} ORDER BY orden, id`, par)
-    .map((j) => ({ ...j, datos: safeJson(j.datos) }));
-}
-
 export function notasDe(db, { texto = "" } = {}) {
   const cond = texto ? "WHERE (titulo LIKE ? OR cuerpo LIKE ?)" : "";
   const par = texto ? [`%${texto}%`, `%${texto}%`] : [];
@@ -320,7 +286,7 @@ export function exportarSesion(db, sesion, proy, eventos, { ahora = selloLocal()
   const partidoId = sesion.partidoId;
   db.transaccion(() => {
     // 1) directo_* de la sesión (idempotente).
-    for (const t of ["directo_eventos", "directo_posesiones", "directo_jugadores", "directo_jugadas", "directo_boxscore", "directo_equipo_stats", "directo_tiros"]) {
+    for (const t of ["directo_eventos", "directo_posesiones", "directo_jugadores", "directo_boxscore", "directo_equipo_stats", "directo_tiros"]) {
       db.run(`DELETE FROM ${t} WHERE sesion_uid=?`, [sesion.uid]);
     }
     db.run(`INSERT OR REPLACE INTO directo_sesion(sesion_uid,partido_id,grupo_db,competicion,grupo,temporada,jornada,fecha,
@@ -363,21 +329,6 @@ export function exportarSesion(db, sesion, proy, eventos, { ahora = selloLocal()
         equipo_id: p.equipoId ?? null, equipo: p.equipo ?? null, resultado: p.resultado ?? null,
         puntos: p.puntos || 0, evento_uid: p.eventoUid ?? null, ts: p.ts ?? null,
       })));
-    }
-
-    // Vínculo con el Playbook.
-    const jugadas = db.all("SELECT id,uid,titulo,equipo_txt,jugador_txt FROM jugadas");
-    const usadas = new Map();
-    for (const e of eventos) if (e.t === "jugada" && e.datos?.uid) usadas.set(e.datos.uid, e);
-    if (jugadas.length) {
-      db.insertar("directo_jugadas", jugadas.map((j) => {
-        const u = usadas.get(j.uid);
-        return {
-          sesion_uid: sesion.uid, uid: j.uid, jugada_id: j.id, jugada_hash: String(j.uid).split("_").pop(), titulo: j.titulo,
-          equipo: j.equipo_txt || "", jugador: j.jugador_txt || "", nota: u?.datos?.nota || null, usada: u ? 1 : 0,
-          cuarto: u?.cuarto ?? null, reloj_seg: u?.reloj ?? null, ts: u?.ts ?? null,
-        };
-      }));
     }
 
     // 2) Boxscore en directo, en tablas propias. NO se sobrescriben las tablas FEB del partido oficial:

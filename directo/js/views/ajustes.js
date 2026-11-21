@@ -72,7 +72,7 @@ export function vistaAjustes(cont) {
           h("h2", { text: "Cómo funciona" }),
           h("div", { class: "md", html: `
 <p><b>Fuente de verdad:</b> cada toque se añade a un registro de eventos en IndexedDB y se proyecta al instante al boxscore. Si cierras la app, se rejuega al abrir.</p>
-<p><b>Exportación:</b> el .db contiene las tablas de FEBstats (mismo esquema y orden de columnas) más las tablas <code>directo_*</code> y cuatro columnas aditivas: <code>tiros.puntos</code>, <code>tiros.evento_uid</code>, <code>tiros.sesion_uid</code> y <code>jugadas.uid</code>.</p>
+<p><b>Exportación:</b> el .db contiene las tablas de FEBstats (mismo esquema y orden de columnas) más las tablas <code>directo_*</code> y tres columnas aditivas: <code>tiros.puntos</code>, <code>tiros.evento_uid</code> y <code>tiros.sesion_uid</code>.</p>
 <p><b>Importación en el Mac:</b> el comando <code>importar_directo(ruta)</code> copia solo el namespace <code>directo_*</code> a <code>usuario.db</code>. No toca las tablas FEB.</p>
 <p><b>Privacidad:</b> no hay telemetría, ni CDN, ni peticiones de red. La única red es la descarga inicial de la app desde GitHub Pages.</p>`})
       )),

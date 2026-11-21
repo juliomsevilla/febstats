@@ -105,6 +105,17 @@ export function confirmar(titulo, texto, { ok = "Aceptar", peligro = false } = {
   });
 }
 
+/** Pide un texto corto en un diálogo. Devuelve "" si se cancela. */
+export function pedirTexto(titulo, placeholder = "", { ok = "Guardar" } = {}) {
+  return new Promise((resolver) => {
+    const ta = h("textarea", { rows: 4, placeholder });
+    const d = dialogo(titulo, h("div", { class: "pedir-texto" }, ta,
+      h("div", { class: "acciones" }, btn("Cancelar", () => { d.close(); resolver(""); }), btn(ok, () => { const v = ta.value.trim(); d.close(); resolver(v); }, { clase: "btn primario" }))));
+    d.addEventListener("close", () => resolver(""), { once: true });
+    setTimeout(() => ta.focus(), 50);
+  });
+}
+
 export function descargar(blob, nombre) {
   const url = URL.createObjectURL(blob);
   const a = h("a", { href: url, download: nombre });
@@ -141,7 +152,7 @@ export function md(texto) {
   let enLista = false;
   const inline = (t) => esc(t)
     .replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, (_, alt, src) => `<img alt="${alt}" src="${src}" class="md-img">`)
-    .replace(/\[\[jugada:(\d+)\|([^\]]+)\]\]/g, '<a href="#/playbook/$1" class="enlace-jugada">▶ $2</a>')
+    .replace(/\[\[jugada:(\d+)\|([^\]]+)\]\]/g, '<span class="etiqueta-jugada">▶ $2</span>')
     .replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
     .replace(/(^|[\s(])\*([^*\n]+)\*/g, "$1<em>$2</em>")
@@ -163,7 +174,6 @@ export const ICONOS = {
   inicio: "M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z",
   partido: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8M12 12h.01",
   boxscore: "M4 5h16v14H4zM4 10h16M9 5v14M14 5v14",
-  playbook: "M3 4h18v16H3zM8 9l4 3-4 3M14 15h3",
   notas: "M6 3h12v18H6zM9 8h6M9 12h6M9 16h4",
   ajustes: "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1",
   importar: "M12 4v11M7 11l5 5 5-5M5 20h14",

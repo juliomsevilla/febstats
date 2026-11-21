@@ -252,7 +252,7 @@ export function proyectar(sesion, eventos, { relojActual } = {}) {
   return est;
 }
 
-/** Puntos de un tiro en la pizarra (2/3) a partir de coordenadas plegadas. */
+/** Puntos de un tiro (2/3) a partir de coordenadas plegadas. */
 export const puntosTiro = puntosDeTiro;
 
 /** Faltas de equipo en el cuarto actual (bonus FIBA: 5). */

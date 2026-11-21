@@ -10,20 +10,7 @@ export const ADDITIVE = [
   ["tiros", "puntos", "INTEGER"],
   ["tiros", "evento_uid", "TEXT"],
   ["tiros", "sesion_uid", "TEXT"],
-  ["jugadas", "uid", "TEXT"],
 ];
-
-// El Playbook vive en usuario.db, no en la .db de grupo. Para que el archivo exportado sea
-// autocontenido se crea aquí la misma tabla (esquema de usuario.rs) y `uid` se añade al final.
-export const EXTRAS_SQL = `
-CREATE TABLE IF NOT EXISTS jugadas (
-  id INTEGER PRIMARY KEY AUTOINCREMENT, titulo TEXT NOT NULL, pista TEXT NOT NULL DEFAULT 'media', datos TEXT NOT NULL, texto TEXT NOT NULL DEFAULT '',
-  descripcion TEXT NOT NULL DEFAULT '', temporada TEXT NOT NULL DEFAULT '', grupo TEXT NOT NULL DEFAULT '',
-  partido TEXT NOT NULL DEFAULT '', partido_txt TEXT NOT NULL DEFAULT '', equipo TEXT NOT NULL DEFAULT '', equipo_txt TEXT NOT NULL DEFAULT '',
-  jugador TEXT NOT NULL DEFAULT '', jugador_txt TEXT NOT NULL DEFAULT '',
-  coleccion TEXT NOT NULL DEFAULT '', seccion TEXT NOT NULL DEFAULT '', orden INTEGER NOT NULL DEFAULT 0,
-  creado TEXT NOT NULL DEFAULT (datetime('now')), modificado TEXT NOT NULL DEFAULT (datetime('now')));
-`;
 
 export const DIRECTO_SQL = `
 CREATE TABLE IF NOT EXISTS directo_sesion (
@@ -118,22 +105,6 @@ CREATE TABLE IF NOT EXISTS directo_tiros (
   puntos INTEGER,
   tiempo_seg INTEGER,
   PRIMARY KEY (sesion_uid, evento_uid)
-);
-
-CREATE TABLE IF NOT EXISTS directo_jugadas (
-  sesion_uid TEXT NOT NULL,
-  uid TEXT NOT NULL,
-  jugada_id INTEGER,
-  jugada_hash TEXT,
-  titulo TEXT,
-  equipo TEXT,
-  jugador TEXT,
-  nota TEXT,
-  usada INTEGER NOT NULL DEFAULT 0,
-  cuarto INTEGER,
-  reloj_seg REAL,
-  ts INTEGER,
-  PRIMARY KEY (sesion_uid, uid)
 );
 
 CREATE TABLE IF NOT EXISTS directo_notas (
@@ -248,7 +219,6 @@ const columnas = (db, tabla) => {
 /** Crea el esquema base y añade lo aditivo. Idempotente: se puede llamar en cada apertura. */
 export function aplicarEsquema(db) {
   db.exec(FEB_BASE_SQL);
-  db.exec(EXTRAS_SQL);
   for (const [tabla, col, tipo] of ADDITIVE) {
     if (!columnas(db, tabla).includes(col)) db.run(`ALTER TABLE ${tabla} ADD COLUMN ${col} ${tipo}`);
   }

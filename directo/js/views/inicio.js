@@ -1,6 +1,6 @@
 // Inicio: importar el paquete de datos, ver grupos y sesiones guardadas.
 import { h, limpiar, btn, icono, toast, dialogo, confirmar, fechaCorta, jornadaTexto, mmss, guardarArchivo } from "../util.js";
-import { app, cargarTodo, abrirGrupo, guardarGrupoEnIDB, cargarSesion, borrarSesion, exportarSesionActual, nombreArchivoExport, etiquetaPeriodo } from "../estado.js";
+import { app, cargarTodo, abrirGrupo, guardarGrupoEnIDB, cargarSesion, borrarSesion, exportarSesionActual, nombreArchivoExport, etiquetaPeriodo, crearGrupoSinDatos } from "../estado.js";
 import { normalizarPaquete, crearGrupoDesdePayload } from "../grupo.js";
 import { idb } from "../idb.js";
 import { navegar } from "../app.js";
@@ -20,6 +20,7 @@ function pintar(cont) {
         h("p", { class: "sub", text: "Scouting en directo para Segunda y Tercera FEB. Todo se guarda en el iPad; sin red." })),
       h("div", { class: "inicio-acciones" },
         botonImportar(cont),
+        sinDatos ? btn("Partido sin datos", empezarSinDatos, { clase: "btn", icon: "partido" }) : null,
         app.sesion ? btn("Seguir en directo", () => navegar("partido"), { clase: "btn primario", icon: "partido" }) : null)),
     sinDatos ? tarjetaImportar(cont) : null,
     app.grupos.length ? seccionGrupos(cont) : null,
@@ -29,6 +30,11 @@ function pintar(cont) {
       h("br"),
       "Formato admitido: FEBstats-iPad.json (paquete v3)."),
   ));
+}
+
+async function empezarSinDatos() {
+  try { await crearGrupoSinDatos(); navegar("nuevo"); }
+  catch (e) { toast("No se pudo crear el partido: " + e.message, "error"); }
 }
 
 function botonImportar(cont) {
@@ -91,18 +97,19 @@ async function importar(file, cont) {
 function seccionGrupos(cont) {
   const cards = app.grupos.map((g) => {
     const r = g.resumen || {};
+    const sinD = r.sinDatos || (r.competicion === "AMISTOSO" && r.grupo === "Sin datos");
     const activo = app.grupoId === g.id;
     return h("article", { class: "card grupo" + (activo ? " activo" : "") },
       h("div", { class: "grupo-cab" },
         h("div", null,
           h("h3", { text: r.competicion || "Grupo" }),
-          h("p", { class: "sub", text: `${r.grupo || ""} · ${r.temporada || ""}` })),
-        h("span", { class: "pill", text: `${r.equipos || 0} equipos` })),
+          h("p", { class: "sub", text: sinD ? "Sin datos FEB · partidos libres" : `${r.grupo || ""} · ${r.temporada || ""}` })),
+        h("span", { class: "pill", text: sinD ? "Sin datos" : `${r.equipos || 0} equipos` })),
       h("dl", { class: "mini-datos" },
         h("div", null, h("dt", { text: "Partidos" }), h("dd", { text: r.partidos ?? 0 })),
         h("div", null, h("dt", { text: "Jugadores" }), h("dd", { text: r.jugadores ?? 0 })),
         h("div", null, h("dt", { text: "Tiros" }), h("dd", { text: r.tiros ?? 0 })),
-        h("div", null, h("dt", { text: "Jugadas" }), h("dd", { text: r.jugadas ?? 0 }))),
+        h("div", null, h("dt", { text: "Notas" }), h("dd", { text: r.notas ?? 0 }))),
       h("div", { class: "acciones" },
         btn("Nuevo partido", async () => { await abrirGrupo(g.id); navegar("nuevo"); }, { clase: "btn primario", icon: "mas" }),
         btn(activo ? "Activo" : "Usar", async () => { await abrirGrupo(g.id); toast(`Grupo activo: ${r.competicion}`, "ok"); pintar(cont); }, { clase: "btn" }),

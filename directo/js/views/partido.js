@@ -1,15 +1,14 @@
-// Pantalla de partido en directo: reloj, pizarra de tiro, acciones y boxscore instantáneo.
-import { h, limpiar, btn, icono, toast, dialogo, mmss, guardarArchivo, md } from "../util.js";
+// Pantalla de partido en directo: reloj, cancha de tiro, acciones y boxscore instantáneo.
+import { h, limpiar, btn, toast, dialogo, mmss, guardarArchivo } from "../util.js";
 import {
   app, suscribir, agregar, deshacer, iniciarReloj, pararReloj, ajustarReloj, relojActual,
-  iniciarPeriodo, finPeriodo, finalizar, siguientePeriodo, cambiarAtaque, cargarSesion,
-  exportarSesionActual, nombreArchivoExport, etiquetaPeriodo, guardarSesion,
+  iniciarPeriodo, finPeriodo, finalizar, siguientePeriodo, cambiarAtaque,
+  exportarSesionActual, nombreArchivoExport, etiquetaPeriodo,
 } from "../estado.js";
 import { crearCancha, puntosDeTiro } from "../court.js";
 import { faltasCuarto } from "../model.js";
-import { statsVacias, jugadasDe, valoracion, pct } from "../grupo.js";
+import { statsVacias } from "../grupo.js";
 import { navegar } from "../app.js";
-import { svgJugada } from "../pizarra.js";
 
 export function vistaPartido(cont) {
   if (!app.sesion) {
@@ -278,8 +277,7 @@ export function vistaPartido(cont) {
         b("Tapón", accionTapon, { clase: "tap" }),
         b("Falta C", () => accionFalta("cometida"), { clase: "falta" }),
         b("Falta R", () => accionFalta("recibida"), { clase: "falta" }),
-        b("Nota", accionNota, { clase: "nota", disabled: false, icono: "notas" }),
-        b("Jugada", accionJugada, { clase: "jugada", disabled: false, icono: "playbook" })),
+        b("Nota", accionNota, { clase: "nota", disabled: false, icono: "notas" })),
       h("p", { class: "pista-ayuda", text: "También puedes tocar directamente la cancha con un jugador elegido." }));
   }
 
@@ -408,31 +406,6 @@ export function vistaPartido(cont) {
     if (!texto) return;
     asistencia = null;
     await agregar("nota", { datos: { texto } });
-  }
-
-  async function accionJugada() {
-    const db = app.grupo;
-    if (!db) { toast("No hay playbook cargado.", "aviso"); return; }
-    const lista = jugadasDe(db).slice(0, 40);
-    const d = dialogo("Jugada usada", h("div", { class: "lista-jugadas-dlg" },
-      lista.length ? lista.map((j) => h("button", { type: "button", class: "jugada-fila", onclick: async () => {
-        d.close();
-        asistencia = null;
-        await agregar("jugada", { datos: { uid: j.uid, titulo: j.titulo, jugadaId: j.id } });
-        verJugada(j);
-      } },
-        h("span", { class: "jf-mini" }, svgJugada(j.datos, { k: 0, mini: true })),
-        h("span", { class: "jf-txt" }, h("b", { text: j.titulo }), h("span", { class: "sub", text: `${j.equipo_txt || ""}${j.jugador_txt ? " · " + j.jugador_txt : ""}` }))))
-        : h("p", { class: "sub", text: "El paquete no trae jugadas." })));
-  }
-
-  function verJugada(j) {
-    import("../pizarra.js").then(({ reproductor }) => {
-      const rep = reproductor(j.datos, { auto: true });
-      dialogo(j.titulo || "Jugada", h("div", { class: "jugada-ver" }, rep.el,
-        j.descripcion ? h("div", { class: "md", html: md(j.descripcion) }) : null,
-        j.texto ? h("p", { class: "sub", text: j.texto }) : null), { sub: `${j.equipo_txt || ""}${j.jugador_txt ? " · " + j.jugador_txt : ""}`, ancho: "ancho" });
-    });
   }
 
   async function sustituir(lado, entra) {

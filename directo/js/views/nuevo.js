@@ -1,7 +1,7 @@
 // Nuevo partido: partido oficial de la FEB, o equipos libres (del JSON o creados desde cero).
 import { h, limpiar, btn, icono, toast, fechaCorta, jornadaTexto, dialogo } from "../util.js";
 import { crearCancha } from "../court.js";
-import { app, abrirGrupo, nuevaSesion } from "../estado.js";
+import { app, abrirGrupo, nuevaSesion, crearGrupoSinDatos } from "../estado.js";
 import { listarPartidos, plantillaDe, minutosRecientes, equiposDe, scoutingEquipo } from "../grupo.js";
 import { navegar } from "../app.js";
 
@@ -33,10 +33,16 @@ export function vistaNuevo(cont) {
   cont.append(cuerpo);
 
   if (!app.grupos.length) {
+    const sinDatos = async () => {
+      try { await crearGrupoSinDatos(); navegar("nuevo"); }
+      catch (e) { toast("No se pudo empezar: " + e.message, "error"); }
+    };
     cuerpo.append(h("div", { class: "vacio" },
-      h("strong", { text: "Primero importa los datos" }),
-      h("p", { text: "Necesitas un grupo de FEBstats para guardar el partido y exportar el .db. Después podrás usar equipos del JSON o crear equipos nuevos." }),
-      btn("Ir a importar", () => navegar("inicio"), { clase: "btn primario", icon: "importar" })));
+      h("strong", { text: "Sin datos FEB" }),
+      h("p", { text: "Puedes empezar a anotar ya con dos equipos nuevos. Si quieres plantillas, informes y partidos de la FEB, importa el JSON." }),
+      h("div", { class: "acciones centradas" },
+        btn("Empezar sin datos", sinDatos, { clase: "btn primario", icon: "partido" }),
+        btn("Importar datos", () => navegar("inicio"), { clase: "btn", icon: "importar" }))));
     return null;
   }
 
@@ -125,6 +131,8 @@ export function vistaNuevo(cont) {
     st.partidos = listarPartidos(db, { soloOficiales: true });
     const r = app.grupos.find((g) => g.id === st.grupoId)?.resumen || {};
     st.competicion = r.competicion || ""; st.grupo = r.grupo || ""; st.temporada = r.temporada || "";
+    // Un grupo sin datos FEB (o sin equipos) empieza directamente en equipos libres.
+    if (!st.equipos.length && !st.partidos.length) st.modo = "libre";
     pintar();
   }
 

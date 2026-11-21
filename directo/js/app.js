@@ -6,7 +6,6 @@ import { vistaInicio } from "./views/inicio.js";
 import { vistaNuevo } from "./views/nuevo.js";
 import { vistaPartido } from "./views/partido.js";
 import { vistaBoxscore } from "./views/boxscore.js";
-import { vistaPlaybook } from "./views/playbook.js";
 import { vistaNotas } from "./views/notas.js";
 import { vistaAjustes } from "./views/ajustes.js";
 
@@ -15,7 +14,6 @@ const RUTAS = {
   nuevo: vistaNuevo,
   partido: vistaPartido,
   boxscore: vistaBoxscore,
-  playbook: vistaPlaybook,
   notas: vistaNotas,
   ajustes: vistaAjustes,
 };
@@ -24,7 +22,6 @@ const NAV = [
   ["inicio", "Inicio", "inicio"],
   ["partido", "Directo", "partido"],
   ["boxscore", "Boxscore", "boxscore"],
-  ["playbook", "Playbook", "playbook"],
   ["notas", "Notas", "notas"],
   ["ajustes", "Ajustes", "ajustes"],
 ];

@@ -4,7 +4,7 @@
 import { idb } from "./idb.js";
 import { DB, blobABytes, bytesABlob } from "./sqlite.js";
 import { aplicarEsquema } from "./schema.js";
-import { DURACION, resumenGrupo } from "./grupo.js";
+import { APP_VERSION, DURACION, resumenGrupo } from "./grupo.js";
 import { proyectar, relojAhora } from "./model.js";
 import { uid, selloLocal } from "./util.js";
 
@@ -41,6 +41,38 @@ export async function cargarTodo() {
     try { await abrirGrupo(app.grupos[0].id); } catch (e) { app.errorGrupo = e.message; }
   }
   avisar();
+}
+
+/** Crea (o reutiliza) un grupo vacío para empezar a anotar sin importar datos FEB. */
+export async function crearGrupoSinDatos() {
+  const id = "grupo_sin_datos.db";
+  if (await idb.get("grupos", id)) { await abrirGrupo(id); return id; }
+  const db = await DB.nuevo();
+  aplicarEsquema(db);
+  db.run("INSERT OR REPLACE INTO grupo_seguido(id,competicion,grupo,temporada) VALUES(0,?,?,?)", ["AMISTOSO", "Sin datos", ""]);
+  for (const [k, v] of [["app", "FEBstats Directo"], ["app_version", APP_VERSION], ["esquema_directo", "1"], ["creado", selloLocal()]]) {
+    db.run("INSERT OR REPLACE INTO directo_meta(clave,valor) VALUES(?,?)", [k, String(v)]);
+  }
+  const resumen = { ...resumenGrupo(db), sinDatos: true };
+  await guardarGrupoEnIDB(id, db, resumen, "");
+  app.grupo = db;
+  app.grupoId = id;
+  avisar();
+  return id;
+}
+
+/** Notas vivas del partido (eventos `nota` no anulados). */
+export function notasDelPartido() {
+  const anul = new Set(app.eventos.filter((e) => e.t === "anulacion").map((e) => e.datos?.ref));
+  return app.eventos.filter((e) => e.t === "nota" && !anul.has(e.uid)).map((e) => ({
+    uid: e.uid, texto: e.datos?.texto || "", cuarto: e.cuarto, tipoPeriodo: e.tipoPeriodo, reloj: e.reloj, ts: e.ts,
+  }));
+}
+
+export async function anularEvento(ref) {
+  if (!app.sesion || !ref) return false;
+  await agregar("anulacion", { uid: uid("anu"), datos: { ref } });
+  return true;
 }
 
 export async function guardarGrupoEnIDB(id, db, resumen, paqueteId = "") {
@@ -298,7 +330,7 @@ export async function cambiarAtaqueSi(cond) {
 export async function exportarSesionActual() {
   if (!app.sesion) throw new Error("No hay sesión abierta.");
   const { exportarSesion } = await import("./grupo.js");
-  const db = app.grupo || (await abrirGrupo(app.sesion.grupoId));
+  const db = app.grupo && app.grupoId === app.sesion.grupoId ? app.grupo : await abrirGrupo(app.sesion.grupoId);
   // Ajusta el reloj real antes de proyectar para que los minutos cuadren.
   if (app.sesion.reloj.corriendo) {
     app.sesion.reloj.reloj = Math.max(0, Math.round(relojAhora(app.sesion.reloj) * 10) / 10);
