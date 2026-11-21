@@ -35,6 +35,22 @@ export async function listarNotas() {
   return filas.sort((a, b) => num(b.modificada) - num(a.modificada) || tituloDeNota(a).localeCompare(tituloDeNota(b), "es"));
 }
 
+let canal;
+function obtenerCanal() {
+  if (canal === undefined) {
+    try { canal = typeof BroadcastChannel !== "undefined" ? new BroadcastChannel("fd-notas") : null; } catch { canal = null; }
+  }
+  return canal;
+}
+export function avisarCambioNotas() { try { obtenerCanal()?.postMessage({ tipo: "cambio" }); } catch { /* nada */ } }
+export function suscribirNotas(fn) {
+  const c = obtenerCanal();
+  if (!c) return () => {};
+  const oyente = () => fn();
+  c.addEventListener("message", oyente);
+  return () => c.removeEventListener("message", oyente);
+}
+
 export async function guardarNota(n) {
   const out = {
     ...notaNueva(),
@@ -51,11 +67,13 @@ export async function guardarNota(n) {
     origen: n.origen || "local",
   };
   await idb.put("notas", out);
+  avisarCambioNotas();
   return out;
 }
 
 export async function borrarNota(id) {
   await idb.del("notas", id);
+  avisarCambioNotas();
 }
 
 async function sembrarUna(n, fallback) {

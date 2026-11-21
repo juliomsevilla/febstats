@@ -145,29 +145,87 @@ export function debounce(fn, ms = 200) {
   return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); };
 }
 
-/** Markdown mínimo y seguro: títulos, listas, negrita, cursiva, código, enlaces e imágenes. */
+/** Markdown para las notas: títulos, listas, tareas, tablas, citas/avisos, código, enlaces, imágenes, fórmulas y reglas. */
 export function md(texto) {
   const lineas = String(texto || "").replace(/\r\n/g, "\n").split("\n");
   const out = [];
-  let enLista = false;
-  const inline = (t) => esc(t)
-    .replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, (_, alt, src) => `<img alt="${alt}" src="${src}" class="md-img">`)
-    .replace(/\[\[jugada:(\d+)\|([^\]]+)\]\]/g, '<span class="etiqueta-jugada">▶ $2</span>')
-    .replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
-    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
-    .replace(/(^|[\s(])\*([^*\n]+)\*/g, "$1<em>$2</em>")
-    .replace(/`([^`]+)`/g, "<code>$1</code>");
-  for (const l of lineas) {
-    const m = l.match(/^(#{1,4})\s+(.*)$/);
-    if (m) { if (enLista) { out.push("</ul>"); enLista = false; } out.push(`<h${m[1].length + 1}>${inline(m[2])}</h${m[1].length + 1}>`); continue; }
-    const li = l.match(/^\s*[-*]\s+(.*)$/);
-    if (li) { if (!enLista) { out.push("<ul>"); enLista = true; } out.push(`<li>${inline(li[1])}</li>`); continue; }
-    if (enLista) { out.push("</ul>"); enLista = false; }
+  const inline = (t) => {
+    const codigos = [];
+    let x = esc(t).replace(/`([^`]+)`/g, (_, c) => { codigos.push(c); return `\u0000${codigos.length - 1}\u0000`; });
+    x = x
+      .replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, '<img alt="$1" src="$2" class="md-img" loading="lazy">')
+      .replace(/\[\[jugada:(\d+)\|([^\]]+)\]\]/g, '<span class="etiqueta-jugada">▶ $2</span>')
+      .replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
+      .replace(/\[\^([^\]]+)\]/g, '<sup class="md-pie">$1</sup>')
+      .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+      .replace(/~~([^~]+)~~/g, "<del>$1</del>")
+      .replace(/(^|[\s(])\*([^*\n]+)\*/g, "$1<em>$2</em>")
+      .replace(/\$([^$\n]+)\$/g, '<span class="md-formula">$1</span>');
+    return x.replace(/\u0000(\d+)\u0000/g, (_, i) => `<code>${codigos[i]}</code>`);
+  };
+  let i = 0;
+  while (i < lineas.length) {
+    const l = lineas[i];
+    if (/^\s*```/.test(l)) {
+      const buf = []; i++;
+      while (i < lineas.length && !/^\s*```/.test(lineas[i])) buf.push(lineas[i++]);
+      if (i < lineas.length) i++;
+      out.push(`<pre class="md-codigo"><code>${esc(buf.join("\n"))}</code></pre>`);
+      continue;
+    }
+    if (/^\s*(?:---+|\*\*\*+|___+)\s*$/.test(l)) { out.push("<hr>"); i++; continue; }
+    const hm = l.match(/^(#{1,4})\s+(.*)$/);
+    if (hm) { const n = hm[1].length + 1; out.push(`<h${n}>${inline(hm[2])}</h${n}>`); i++; continue; }
+    if (l.includes("|") && i + 1 < lineas.length && /^\s*\|?\s*:?-{2,}/.test(lineas[i + 1])) {
+      const celdas = (line) => line.replace(/^\s*\|/, "").replace(/\|\s*$/, "").split("|").map((c) => c.trim());
+      const cab = celdas(l); i += 2; const filas = [];
+      while (i < lineas.length && lineas[i].includes("|") && lineas[i].trim()) { filas.push(celdas(lineas[i])); i++; }
+      out.push(`<div class="md-tabla-wrap"><table class="md-tabla"><thead><tr>${cab.map((c) => `<th>${inline(c)}</th>`).join("")}</tr></thead><tbody>${filas.map((f) => `<tr>${f.map((c) => `<td>${inline(c)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`);
+      continue;
+    }
+    if (/^\s*>/.test(l)) {
+      const buf = [];
+      while (i < lineas.length && /^\s*>/.test(lineas[i])) buf.push(lineas[i++].replace(/^\s*>\s?/, ""));
+      const aviso = (buf[0] || "").match(/^\[!(NOTE|TIP|WARNING|IMPORTANT|CAUTION)\]\s*(.*)$/i);
+      if (aviso) {
+        const tipo = aviso[1].toLowerCase();
+        const resto = [aviso[2], ...buf.slice(1)].filter(Boolean);
+        out.push(`<div class="md-aviso ${tipo}"><b>${esc(aviso[1])}</b>${resto.map((x) => `<p>${inline(x)}</p>`).join("")}</div>`);
+      } else {
+        out.push(`<blockquote>${buf.map((x) => x ? `<p>${inline(x)}</p>` : "").join("")}</blockquote>`);
+      }
+      continue;
+    }
+    const esUl = /^\s*[-*+]\s+/.test(l), esOl = /^\s*\d+[.)]\s+/.test(l);
+    if (esUl || esOl) {
+      const tipo = esUl ? "ul" : "ol", items = [];
+      while (i < lineas.length) {
+        const mm = esUl ? lineas[i].match(/^\s*[-*+]\s+(.*)$/) : lineas[i].match(/^\s*\d+[.)]\s+(.*)$/);
+        if (!mm) break;
+        const tarea = mm[1].match(/^\[([ xX])\]\s+(.*)$/);
+        items.push(tarea
+          ? `<li class="md-tarea"><input type="checkbox" disabled${tarea[1].toLowerCase() === "x" ? " checked" : ""}> ${inline(tarea[2])}</li>`
+          : `<li>${inline(mm[1])}</li>`);
+        i++;
+      }
+      out.push(`<${tipo}>${items.join("")}</${tipo}>`);
+      continue;
+    }
     if (!l.trim()) out.push("<p class='md-vacio'></p>");
     else out.push(`<p>${inline(l)}</p>`);
+    i++;
   }
-  if (enLista) out.push("</ul>");
   return out.join("");
+}
+
+/** Markdown de notas: las imágenes relativas del paquete se muestran como marcador (no rompen la vista). */
+export function mdNota(texto) {
+  return md(texto).replace(/<img\b([^>]*)>/g, (tag, attrs) => {
+    const src = (attrs.match(/\bsrc="([^"]*)"/) || [])[1] || "";
+    if (/^(data:|https?:)/i.test(src)) return tag;
+    const alt = (attrs.match(/\balt="([^"]*)"/) || [])[1] || "";
+    return `<span class="img-falta" data-img="${src}">Imagen no incluida: ${alt || src.split("/").pop()}</span>`;
+  });
 }
 
 export const ICONOS = {

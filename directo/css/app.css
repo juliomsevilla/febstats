@@ -483,3 +483,58 @@ select { max-width: 280px; }
 .nota-preview { max-height: 240px; overflow: auto; margin-top: 6px; }
 .nota-meta-pills { display: flex; gap: 4px; flex-wrap: wrap; margin-top: 5px; }
 .nota-fechas { margin: 4px 0 10px; }
+
+/* ---------- notas a pantalla completa ---------- */
+.notas { min-height: calc(100dvh - var(--cab) - 28px); }
+.notas.sin-lado { grid-template-columns: minmax(0, 1fr); }
+.notas.sin-lado .notas-lista { display: none; }
+.nota-detalle { min-height: calc(100dvh - var(--cab) - 28px); display: flex; flex-direction: column; }
+.nota-cuerpo { font-size: 15px; line-height: 1.65; }
+.nota-toggle.solo-plegado { display: none; }
+.notas.sin-lado .nota-toggle.solo-plegado { display: inline-flex; }
+.nota-toggle { font-weight: 650; }
+
+/* ---------- editor de nota (casi pantalla completa) ---------- */
+.dlg.nota-dlg { width: min(1400px, 98vw); height: 92dvh; max-height: 92dvh; }
+.dlg.nota-dlg .dlg-body { height: calc(92dvh - 64px); max-height: none; display: flex; padding: 12px 16px; }
+.nota-editor-form { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 7px; }
+.nota-contexto { font-size: 12px; color: var(--suave); margin: 0; }
+.nota-toolbar { display: flex; flex-wrap: wrap; gap: 2px; padding: 4px; background: var(--panel-2); border: 1px solid var(--borde); border-radius: 9px; }
+.nota-tool { min-height: 30px; min-width: 32px; padding: 0 6px; font-size: 12.5px; font-weight: 700; border-radius: 7px; }
+.nota-editor-barra2 { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.nota-vista button { padding: 4px 10px; font-size: 12px; }
+.nota-panes { flex: 1; min-height: 0; display: grid; gap: 8px; }
+.nota-panes.dividida { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.nota-panes.editor { grid-template-columns: minmax(0, 1fr); }
+.nota-panes.editor .nota-pane-preview { display: none; }
+.nota-panes.previa { grid-template-columns: minmax(0, 1fr); }
+.nota-panes.previa .nota-pane-editor { display: none; }
+.nota-pane-editor, .nota-pane-preview { min-height: 0; display: flex; }
+.nota-cm { flex: 1; width: 100%; min-height: 220px; resize: none; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13.5px; line-height: 1.55; background: var(--panel); border: 1px solid var(--borde); border-radius: 9px; padding: 10px; }
+.nota-preview-pane { flex: 1; overflow: auto; padding: 10px 14px; background: var(--panel); border: 1px solid var(--borde); border-radius: 9px; }
+
+/* ---------- Markdown extra ---------- */
+.md blockquote { margin: 8px 0; padding: 6px 12px; border-left: 3px solid var(--borde); background: var(--panel-2); color: var(--suave); border-radius: 0 8px 8px 0; }
+.md blockquote p { margin: 3px 0; }
+.md-aviso { margin: 8px 0; padding: 8px 11px; border-left: 4px solid var(--azul); background: var(--azul-soft); border-radius: 0 9px 9px 0; }
+.md-aviso.warning, .md-aviso.caution { border-left-color: var(--aviso); background: color-mix(in srgb, var(--aviso) 12%, var(--panel)); }
+.md-aviso b { display: block; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; margin-bottom: 3px; }
+.md-aviso p { margin: 2px 0; }
+.md-tabla-wrap { overflow-x: auto; margin: 8px 0; }
+.md-tabla { border-collapse: collapse; width: 100%; font-size: 13px; }
+.md-tabla th, .md-tabla td { border: 1px solid var(--borde); padding: 5px 8px; text-align: left; vertical-align: top; }
+.md-tabla th { background: var(--panel-2); font-weight: 700; }
+.md-tarea { list-style: none; margin-left: -18px; }
+.md-tarea input { margin-right: 6px; }
+.md-codigo { background: var(--panel-2); border: 1px solid var(--borde); border-radius: 8px; padding: 10px; overflow: auto; margin: 8px 0; }
+.md-codigo code { background: none; border: 0; padding: 0; font-size: 12.5px; }
+.md hr { border: 0; border-top: 1px solid var(--borde); margin: 12px 0; }
+.md-formula { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--panel-2); border-radius: 5px; padding: 0 4px; }
+.md-pie { font-size: .75em; vertical-align: super; color: var(--acento-texto); }
+.md img.md-img { max-width: 100%; border-radius: 10px; border: 1px solid var(--borde); margin: 8px 0; }
+.md .etiqueta-jugada { font-size: .9em; }
+
+/* ---------- sin cuadrados fantasma ---------- */
+.toast { visibility: hidden; opacity: 0; }
+.toast.visible { visibility: visible; opacity: 1; }
+.dlg:not([open]) { display: none; }

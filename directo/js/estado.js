@@ -67,20 +67,6 @@ export async function crearGrupoSinDatos() {
   return id;
 }
 
-/** Notas vivas del partido (eventos `nota` no anulados). */
-export function notasDelPartido() {
-  const anul = new Set(app.eventos.filter((e) => e.t === "anulacion").map((e) => e.datos?.ref));
-  return app.eventos.filter((e) => e.t === "nota" && !anul.has(e.uid)).map((e) => ({
-    uid: e.uid, texto: e.datos?.texto || "", cuarto: e.cuarto, tipoPeriodo: e.tipoPeriodo, reloj: e.reloj, ts: e.ts,
-  }));
-}
-
-export async function anularEvento(ref) {
-  if (!app.sesion || !ref) return false;
-  await agregar("anulacion", { uid: uid("anu"), datos: { ref } });
-  return true;
-}
-
 /** Migración única: las notas antiguas vivían como eventos `nota`; pasan al store editable. */
 async function migrarNotasEventos() {
   if (await idb.get("meta", "notas_eventos_migradas")) return;

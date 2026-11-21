@@ -8,7 +8,7 @@ import {
 import { crearCancha, puntosDeTiro } from "../court.js";
 import { faltasCuarto } from "../model.js";
 import { statsVacias } from "../grupo.js";
-import { guardarNota, notaDeSesion } from "../notas-modelo.js";
+import { abrirEditorNota } from "../notas-editor.js";
 import { navegar } from "../app.js";
 
 export function vistaPartido(cont) {
@@ -182,8 +182,8 @@ export function vistaPartido(cont) {
       h("div", { class: "panel-cab" },
         h("div", null, h("h2", { text: "Scouting" }), h("p", { class: "sub", text: "Toca jugador → cancha → anota/falla" })),
         h("div", { class: "panel-cab-der" },
-          btn("Notas", abrirNotas, { clase: "btn pequeno", icon: "notas", title: "Abrir las notas en otra pestaña" }),
-          h("span", { class: "pill " + (app.sesion.reloj.corriendo ? "ok" : ""), text: app.sesion.reloj.corriendo ? "En marcha" : "Parado" }))),
+          btn("Nueva nota", abrirNuevaNota, { clase: "btn pequeno primario", icon: "mas", title: "Crear una nota vinculada a este partido" }),
+          btn("Notas", abrirNotas, { clase: "btn pequeno", icon: "notas", title: "Abrir las notas en otra pestaña" }))),
       seleccionCab(),
       pendiente ? tarjetaTiro() : null,
       asistencia ? tiraAsistencia() : null,
@@ -404,15 +404,16 @@ export function vistaPartido(cont) {
     await darAsistencia(app.seleccion.lado, app.seleccion.dorsal);
   }
 
-  async function accionNota() {
-    const texto = await pedirTexto("Nota del partido", "Ej.: cambios en defensa, detalle técnico, aviso para el descanso…");
-    if (!texto) return;
-    asistencia = null;
+  function abrirNuevaNota() {
     const lado = app.seleccion?.lado || null;
     const jugador = lado ? jugadores(lado).find((j) => j.dorsal === String(app.seleccion.dorsal)) : null;
-    await guardarNota(notaDeSesion(app.sesion, { cuerpo: texto, lado, jugador }));
-    toast("Nota guardada. Puedes editarla en Notas.", "ok");
+    abrirEditorNota(null, {
+      sesion: app.sesion, lado, jugador,
+      onGuardada: () => toast("Nota guardada. Puedes editarla en Notas.", "ok"),
+    });
   }
+
+  async function accionNota() { abrirNuevaNota(); }
 
   function abrirNotas() {
     const url = new URL(location.href);
@@ -498,16 +499,6 @@ export function vistaPartido(cont) {
     } catch (e) {
       console.error(e); toast("No se pudo exportar: " + e.message, "error");
     } finally { exportando = false; }
-  }
-
-  function pedirTexto(titulo, placeholder) {
-    return new Promise((resolver) => {
-      const ta = h("textarea", { rows: 4, placeholder });
-      const d = dialogo(titulo, h("div", { class: "pedir-texto" }, ta,
-        h("div", { class: "acciones" }, btn("Cancelar", () => { d.close(); resolver(""); }), btn("Guardar", () => { const v = ta.value.trim(); d.close(); resolver(v); }, { clase: "btn primario" }))));
-      d.addEventListener("close", () => resolver(""), { once: true });
-      setTimeout(() => ta.focus(), 50);
-    });
   }
 
   function elegir(titulo, texto, opciones) {
