@@ -28,8 +28,14 @@ function abrir() {
         n.createIndex("modificada", "modificada");
       }
     };
-    r.onsuccess = () => { _db = r.result; resolver(_db); };
+    r.onsuccess = () => {
+      _db = r.result;
+      // Si otra pestaña abre una versión nueva, esta conexión debe soltarse.
+      _db.onversionchange = () => { try { _db.close(); } catch { /* ya cerrada */ } _db = null; };
+      resolver(_db);
+    };
     r.onerror = () => rechazar(r.error);
+    r.onblocked = () => console.warn("IndexedDB bloqueada por otra pestaña de FEBstats Directo.");
   });
 }
 

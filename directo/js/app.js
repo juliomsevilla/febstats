@@ -147,7 +147,17 @@ async function arrancar() {
   construirShell();
   const main = document.getElementById("vista");
   main.append(h("div", { class: "vacio" }, h("strong", { text: "Cargando…" }), h("p", { text: "Abriendo los datos del iPad." })));
-  try { await cargarTodo(); } catch (e) { console.error(e); toast("No se pudo abrir el almacenamiento local.", "error"); }
+  try {
+    await Promise.race([
+      cargarTodo(),
+      new Promise((_, rechazar) => setTimeout(() => rechazar(new Error("La base de datos está abierta en otra pestaña de FEBstats Directo. Ciérrala y vuelve a abrir esta.")), 8000)),
+    ]);
+  } catch (e) {
+    console.error(e);
+    toast("No se pudo abrir el almacenamiento local.", "error");
+    const m = document.getElementById("vista");
+    if (m) m.replaceChildren(h("div", { class: "vacio" }, h("strong", { text: "No se pudo abrir la base de datos" }), h("p", { text: e.message }), h("button", { type: "button", class: "btn primario", onclick: () => location.reload() }, "Recargar")));
+  }
   const ultima = (() => { try { return localStorage.getItem("fd:sesion"); } catch { return null; } })();
   if (ultima) {
     try { await cargarSesion(ultima); } catch { /* sesión borrada */ }
