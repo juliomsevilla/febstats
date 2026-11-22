@@ -489,7 +489,8 @@ function escribirPartidoFEB(db, sesion, proy) {
 export function statsVacias() {
   return {
     segundos: 0, puntos: 0, t2a: 0, t2i: 0, t3a: 0, t3i: 0, tla: 0, tli: 0, rebOf: 0, rebDef: 0,
-    asistencias: 0, recuperaciones: 0, perdidas: 0, taponesFavor: 0, taponesContra: 0, mates: 0, faltas: 0, faltasRecibidas: 0,
+    asistencias: 0, recuperaciones: 0, perdidas: 0, taponesFavor: 0, taponesContra: 0, disruptivas: 0, mates: 0,
+    faltas: 0, faltasRecibidas: 0, tecnicas1: 0, tecnicas2: 0, flagrantes: 0, descalificantes: 0,
     masMenos: 0,
   };
 }

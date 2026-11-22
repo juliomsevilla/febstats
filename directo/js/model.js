@@ -42,12 +42,20 @@ function crearEstado(sesion, relojInicial) {
     pts: { local: 0, visitante: 0 }, equipos: { local: equipoVacio(), visitante: equipoVacio() },
     jugadores, oncourt, onSince,
     periodos: [{ n: 1, tipo: "regular", dur: DURACION.regular, pts: { local: 0, visitante: 0 }, faltas: { local: 0, visitante: 0 } }],
-    tiros: [], posesiones: [], faltasPeriodo: { local: {}, visitante: {} }, ultimoTiro: null, ultimaJugada: null,
-    posesionAbierta: null, numeroPosesion: 0, cambios: [],
+    tiros: [], posesiones: [], faltasPeriodo: { local: {}, visitante: {} }, tiemposMuertos: { local: 0, visitante: 0 },
+    banquillo: {
+      local: { c: 0, b: 0, bd: 0, d: 0 },
+      visitante: { c: 0, b: 0, bd: 0, d: 0 },
+    },
+    expulsadosBanquillo: { local: {}, visitante: {} },
+    ultimoTiro: null, ultimaJugada: null, posesionAbierta: null, numeroPosesion: 0, cambios: [],
   };
 }
 
-const equipoVacio = () => ({ ...statsVacias(), extra: { perdidas: 0, taponesContra: 0, rebOf: 0, rebDef: 0, faltas: 0, asistencias: 0, recuperaciones: 0 } });
+const equipoVacio = () => ({
+  ...statsVacias(),
+  extra: { perdidas: 0, taponesFavor: 0, taponesContra: 0, rebOf: 0, rebDef: 0, faltas: 0, faltasRecibidas: 0, asistencias: 0, recuperaciones: 0, disruptivas: 0 },
+});
 
 function cerrarMinutos(est, lado, dorsal, cuarto, tipoPeriodo, reloj) {
   const desde = est.onSince[lado]?.[dorsal];
@@ -164,6 +172,7 @@ export function proyectar(sesion, eventos, { relojActual } = {}) {
           cuarto: e.cuarto ?? est.cuarto, tiempoRestante: reloj, puntos: tl ? 1 : puntos,
           resultado: d.resultado === "acierto" ? "acierto" : "fallo", tl,
           X: d.X ?? null, Y: d.Y ?? null, Xinv: d.Xinv ?? null, Yinv: d.Yinv ?? null, mate: !!d.mate,
+          basket: d.basket === "left" || d.basket === "right" ? d.basket : null,
         };
         est.tiros.push(tiro);
         est.ultimoTiro = tiro;
@@ -180,9 +189,11 @@ export function proyectar(sesion, eventos, { relojActual } = {}) {
       }
       case "asistencia":
         if (jug) jug.asistencias += 1;
+        else if (lado) est.equipos[lado].extra.asistencias += 1;
         break;
       case "robo":
         if (jug) jug.recuperaciones += 1;
+        else if (lado) est.equipos[lado].extra.recuperaciones += 1;
         break;
       case "perdida":
         if (jug) jug.perdidas += 1; else if (lado) est.equipos[lado].extra.perdidas += 1;
@@ -190,16 +201,68 @@ export function proyectar(sesion, eventos, { relojActual } = {}) {
         break;
       case "tapon": {
         if (jug) jug.taponesFavor += 1;
+        else if (lado) est.equipos[lado].extra.taponesFavor += 1;
         const otro = lado === "local" ? "visitante" : "local";
-        est.equipos[otro].extra.taponesContra += 1;
+        if (lado) est.equipos[otro].extra.taponesContra += 1;
         break;
       }
+      case "disruptiva":
+        if (jug) jug.disruptivas += 1;
+        else if (lado) est.equipos[lado].extra.disruptivas += 1;
+        break;
       case "falta": {
-        const recibida = e.datos?.clase === "recibida";
-        if (jug) { if (recibida) jug.faltasRecibidas += 1; else jug.faltas += 1; }
-        else if (lado) est.equipos[lado].extra.faltas += 1;
-        if (lado && !recibida) est.faltasPeriodo[lado][est.cuarto] = (est.faltasPeriodo[lado][est.cuarto] || 0) + 1;
+        const d = e.datos || {};
+        const recibida = d.clase === "recibida";
+        const tipo = d.tipo || (d.flagrante ? "FL" : (recibida ? null : "P"));
+        if (recibida) {
+          if (jug) jug.faltasRecibidas += 1;
+          else if (lado) est.equipos[lado].extra.faltasRecibidas += 1;
+        } else if (jug) {
+          jug.faltas += 1;
+          if (tipo === "T1") jug.tecnicas1 += 1;
+          else if (tipo === "T2") jug.tecnicas2 += 1;
+          else if (tipo === "DI") jug.disruptivas += 1;
+          else if (tipo === "FL") jug.flagrantes += 1;
+          else if (tipo === "D") jug.descalificantes += 1;
+        } else if (lado) {
+          est.equipos[lado].extra.faltas += 1;
+        }
+        // Las faltas de equipo en prórroga cuentan en el 4º cuarto (Art. 42.1.3).
+        if (lado && !recibida) {
+          const cuartoFaltas = Math.min(est.cuarto, 4);
+          est.faltasPeriodo[lado][cuartoFaltas] = (est.faltasPeriodo[lado][cuartoFaltas] || 0) + 1;
+        }
         if (lado) { const per = est.periodos[est.periodos.length - 1]; if (per) per.faltas[lado] += 1; }
+        break;
+      }
+      case "tiempo_muerto":
+        if (lado) est.tiemposMuertos[lado] += 1;
+        break;
+      case "falta_banquillo": {
+        if (!lado) break;
+        const d = e.datos || {};
+        // B2 era el código antiguo de descalificante de banquillo; ahora es D.
+        const tipo = d.tipo === "B2" ? "D" : d.tipo;
+        const bq = est.banquillo[lado];
+        if (tipo === "C") bq.c += 1;
+        else if (tipo === "B") bq.b += 1;
+        else if (tipo === "BD") bq.bd += 1;
+        const clave = e.dorsal != null ? `jugador:${e.dorsal}` : `staff:${e.datos?.staffIndex ?? 0}`;
+        if (tipo === "D") {
+          bq.d += 1;
+          est.expulsadosBanquillo[lado][clave] = true;
+          // La descalificante de un miembro del banquillo se carga como técnica
+          // al entrenador principal (B para banquillo/suplentes; BD para acompañantes).
+          const tecnica = e.datos?.tecnicaEntrenador || (clave !== "staff:0" ? "B" : null);
+          if (tecnica === "B") bq.b += 1;
+          else if (tecnica === "BD") bq.bd += 1;
+        }
+        // Las faltas de banquillo no cuentan como faltas de equipo (Art. 36.3.1).
+        if (sesion[lado]?.entrenador) {
+          const principal = "staff:0";
+          if (bq.c >= 2) est.expulsadosBanquillo[lado][principal] = true;
+          if (bq.c + bq.b + bq.bd >= 3) est.expulsadosBanquillo[lado][principal] = true;
+        }
         break;
       }
       case "posesion":
@@ -230,14 +293,19 @@ export function proyectar(sesion, eventos, { relojActual } = {}) {
   // Totales de equipo = suma de jugadores + acciones sin jugador.
   for (const lado of LADOS) {
     const eq = est.equipos[lado];
+    // Las acciones de equipo/banquillo se acumulan en `extra`; hay que conservarlas
+    // al reiniciar los totales.
+    const extra = { ...(eq.extra || {}) };
     const base = equipoVacio();
     Object.assign(eq, base);
+    eq.extra = extra;
     for (const d of Object.keys(est.jugadores[lado])) {
       const s = est.jugadores[lado][d];
       for (const k of ["segundos", "puntos", "t2a", "t2i", "t3a", "t3i", "tla", "tli", "rebOf", "rebDef", "asistencias",
-        "recuperaciones", "perdidas", "taponesFavor", "taponesContra", "mates", "faltas", "faltasRecibidas", "masMenos"]) eq[k] += s[k];
+        "recuperaciones", "perdidas", "taponesFavor", "taponesContra", "disruptivas", "mates", "faltas", "faltasRecibidas",
+        "tecnicas1", "tecnicas2", "flagrantes", "descalificantes", "masMenos"]) eq[k] += s[k];
     }
-    for (const k of ["rebOf", "rebDef", "perdidas", "taponesContra", "faltas"]) eq[k] += eq.extra[k] || 0;
+    for (const k of ["rebOf", "rebDef", "perdidas", "taponesFavor", "taponesContra", "disruptivas", "asistencias", "recuperaciones", "faltas", "faltasRecibidas"]) eq[k] += extra[k] || 0;
     eq.valoracion = valoracion(eq);
   }
 
@@ -255,5 +323,8 @@ export function proyectar(sesion, eventos, { relojActual } = {}) {
 /** Puntos de un tiro (2/3) a partir de coordenadas plegadas. */
 export const puntosTiro = puntosDeTiro;
 
-/** Faltas de equipo en el cuarto actual (bonus FIBA: 5). */
-export function faltasCuarto(proy, lado) { return proy.faltasPeriodo?.[lado]?.[proy.cuarto] || 0; }
+/** Faltas de equipo en el cuarto actual. Las prórrogas cuentan como 4º cuarto. */
+export function faltasCuarto(proy, lado) {
+  const cuarto = Math.min(proy?.cuarto || 1, 4);
+  return proy.faltasPeriodo?.[lado]?.[cuarto] || 0;
+}

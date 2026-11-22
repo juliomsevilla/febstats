@@ -1,6 +1,6 @@
 // Ajustes: almacenamiento, persistencia, datos y diagnóstico.
-import { h, limpiar, btn, toast, confirmar, dialogo, guardarArchivo } from "../util.js";
-import { app, cargarTodo, borrarSesion, exportarSesionActual, nombreArchivoExport } from "../estado.js";
+import { h, limpiar, btn, toast, confirmar, dialogo } from "../util.js";
+import { app, cargarTodo, borrarSesion } from "../estado.js";
 import { idb, pedirPersistencia } from "../idb.js";
 import { APP_VERSION } from "../grupo.js";
 import { navegar } from "../app.js";
@@ -27,7 +27,7 @@ export function vistaAjustes(cont) {
             h("div", null, h("dt", { text: "Cuota" }), h("dd", { text: p.cuota ? `${(p.cuota / 1048576).toFixed(0)} MB` : "—" })),
             h("div", null, h("dt", { text: "Grupos" }), h("dd", { text: String(app.grupos.length) })),
             h("div", null, h("dt", { text: "Sesiones" }), h("dd", { text: String(app.sesiones.length) }))),
-          h("p", { class: "sub", text: "iOS puede liberar almacenamiento si no usas la app durante semanas. Instálala en la pantalla de inicio y exporta el .db al descanso y al final." }),
+          h("p", { class: "sub", text: "iOS puede liberar almacenamiento si no usas la app durante semanas. Instálala en la pantalla de inicio y exporta el .db de cada partido finalizado desde Inicio." }),
           h("div", { class: "acciones" },
             btn("Volver a pedir persistencia", async () => { app.persistencia = await pedirPersistencia(); toast(app.persistencia.persistido ? "Persistencia concedida." : "El sistema no la ha concedido.", app.persistencia.persistido ? "ok" : "aviso"); pintar(); }, { clase: "btn" }),
             btn("Ver estado del esquema", diagnostico, { clase: "btn" }))),
@@ -36,13 +36,6 @@ export function vistaAjustes(cont) {
           app.grupos.length ? h("ul", { class: "lista-simple" }, app.grupos.map((g) => h("li", null,
             h("div", null, h("b", { text: `${g.resumen?.competicion || ""} · ${g.resumen?.grupo || ""}` }), h("span", { class: "sub", text: `${g.resumen?.temporada || ""} · ${g.resumen?.partidos || 0} partidos · ${g.resumen?.tiros || 0} tiros` })),
             h("div", { class: "acciones" },
-              btn("Exportar .db", async () => {
-                try {
-                  await (await import("../estado.js")).abrirGrupo(g.id);
-                  const bytes = app.grupo.bytes();
-                  await guardarArchivo(new Blob([bytes], { type: "application/vnd.sqlite3" }), `${g.id}`);
-                } catch (e) { toast(e.message, "error"); }
-              }, { clase: "btn pequeno", icon: "exportar" }),
               btn("Quitar", async () => {
                 const ok = await confirmar("Quitar grupo", `Se borrarán los datos de «${g.resumen?.competicion}» de este iPad.`, { ok: "Quitar", peligro: true });
                 if (!ok) return;
@@ -56,16 +49,8 @@ export function vistaAjustes(cont) {
           app.sesiones.length ? h("ul", { class: "lista-simple" }, app.sesiones.slice(0, 12).map((s) => h("li", null,
             h("div", null, h("b", { text: `${s.local.nombre} vs ${s.visitante.nombre}` }), h("span", { class: "sub", text: `${s.estado || ""} · ${s.inicio || ""}` })),
             h("div", { class: "acciones" },
-              btn("Exportar", async () => {
-                try {
-                  const { cargarSesion } = await import("../estado.js");
-                  if (app.sesion?.id !== s.id) await cargarSesion(s.id);
-                  const bytes = await exportarSesionActual();
-                  await guardarArchivo(new Blob([bytes], { type: "application/vnd.sqlite3" }), nombreArchivoExport(s));
-                } catch (e) { toast(e.message, "error"); }
-              }, { clase: "btn pequeno", icon: "exportar" }),
               btn("Borrar", async () => {
-                const ok = await confirmar("Borrar sesión", "Se borrará esta sesión del iPad. Exporta antes el .db si lo necesitas.", { ok: "Borrar", peligro: true });
+                const ok = await confirmar("Borrar sesión", "Se borrará esta sesión del iPad. La exportación de partidos finalizados está en Inicio y solo está disponible para partidos finalizados.", { ok: "Borrar", peligro: true });
                 if (ok) { await borrarSesion(s.id); await cargarTodo(); pintar(); }
               }, { clase: "btn pequeno fantasma" }))))) : h("p", { class: "sub", text: "No hay sesiones." })),
         h("article", { class: "card" },

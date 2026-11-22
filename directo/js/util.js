@@ -67,6 +67,21 @@ export function selloLocal(d = new Date()) {
 export const uid = (p = "e") => `${p}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 9)}`;
 export const esc = (t) => String(t ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
+/** Nombre real de un jugador, o "" si el nombre es solo el dorsal por defecto. */
+export function nombreJugador(nombre, dorsal) {
+  const n = String(nombre || "").trim();
+  const d = String(dorsal ?? "").trim();
+  if (!n) return "";
+  if (d && (n === d || n === `#${d}` || n === `Nº ${d}` || n === `N° ${d}`)) return "";
+  return n;
+}
+
+/** "#4 Nombre" o solo "#4" cuando no hay nombre real. */
+export function etiquetaJugador(nombre, dorsal) {
+  const n = nombreJugador(nombre, dorsal);
+  return n ? `#${dorsal} ${n}` : `#${dorsal}`;
+}
+
 /** Aviso breve no bloqueante. */
 let toastTimer = 0;
 export function toast(msg, tipo = "") {
@@ -246,6 +261,8 @@ export const ICONOS = {
   buscar: "M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14M20 20l-4-4",
   balon: "M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18M5.6 5.6c2 2 2.6 4.4 2.6 6.4s-.6 4.4-2.6 6.4M18.4 5.6c-2 2-2.6 4.4-2.6 6.4s.6 4.4 2.6 6.4M3 12h18",
   reloj: "M12 7v5l3 2M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18",
+  sol: "M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4",
+  luna: "M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z",
   importado: "M5 13l4 4L19 7",
 };
 export const icono = (n) => s("svg", { class: "ico", viewBox: "0 0 24 24", "aria-hidden": "true" }, s("path", { d: ICONOS[n] || ICONOS.partido }));

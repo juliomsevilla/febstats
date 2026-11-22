@@ -62,34 +62,73 @@ export function vistaNotas(cont, params = []) {
     raiz.classList.toggle("sin-lado", !st.lado);
   }
 
+  function agrupar(filtradas) {
+    const grupos = new Map();
+    for (const n of filtradas) {
+      const clave = n.partido ? `p:${n.partido}` : "sin";
+      if (!grupos.has(clave)) {
+        grupos.set(clave, {
+          clave,
+          partido: n.partido ? String(n.partido) : "",
+          titulo: n.partido ? (n.partido_txt || `Partido ${n.partido}`) : "Sin partido asignado",
+          notas: [],
+          ultima: 0,
+        });
+      }
+      const g = grupos.get(clave);
+      g.notas.push(n);
+      g.ultima = Math.max(g.ultima, Number(n.modificada) || 0);
+    }
+    const pid = app.sesion?.partidoId ? String(app.sesion.partidoId) : "";
+    return [...grupos.values()].sort((a, b) => {
+      if (pid) {
+        if (a.partido === pid) return -1;
+        if (b.partido === pid) return 1;
+      }
+      if (a.clave === "sin") return 1;
+      if (b.clave === "sin") return -1;
+      return b.ultima - a.ultima;
+    });
+  }
+
   function construir() {
     raiz.classList.toggle("sin-lado", !st.lado);
     const filtradas = st.notas.filter(coincide);
-    const pid = app.sesion?.partidoId;
-    const delPartido = pid ? filtradas.filter((n) => String(n.partido) === String(pid)) : [];
-    const otras = pid ? filtradas.filter((n) => String(n.partido) !== String(pid)) : filtradas;
+    const pid = app.sesion?.partidoId ? String(app.sesion.partidoId) : "";
 
     const fila = (n) => h("button", { type: "button", class: "nota-fila" + (st.sel === n.id ? " sel" : ""), onclick: () => { st.sel = n.id; pintar(); } },
       h("b", { text: tituloDeNota(n) }),
       h("span", { class: "sub", text: metaLinea(n) }),
       h("span", { class: "sub", text: extracto(n) }));
 
-    const toggle = (extra = "") => h("button", { type: "button", class: "btn fantasma nota-toggle " + extra, title: "Mostrar u ocultar la lista de notas", "aria-label": "Mostrar u ocultar la lista de notas", onclick: alternarLado }, "☰ Notas");
+    const toggle = (extra = "") => h("button", {
+      type: "button",
+      class: "btn fantasma nota-toggle " + extra,
+      title: "Mostrar u ocultar la lista de notas",
+      "aria-label": "Mostrar u ocultar la lista de notas",
+      onclick: alternarLado,
+    }, "☰ Notas");
+
+    const grupos = agrupar(filtradas);
+    const bloqueGrupo = (g) => h("div", { class: "nota-grupo" + (g.partido && g.partido === pid ? " actual" : "") },
+      h("div", { class: "ng-cab" },
+        h("h4", { text: g.titulo }),
+        h("span", { class: "pill", text: `${g.notas.length}` })),
+      g.notas.map(fila));
 
     const lista = h("aside", { class: "notas-lista" },
       h("div", { class: "lista-cab compacta" },
         h("div", null, h("h1", { text: "Notas" }), h("p", { class: "sub", text: `${st.notas.length} nota${st.notas.length === 1 ? "" : "s"} · editables` })),
         h("div", { class: "acciones" }, toggle()),
         h("div", { class: "buscador" }, icono("buscar"), h("input", { type: "search", placeholder: "Buscar en notas…", value: st.texto, oninput: (e) => { st.texto = e.target.value; pintar(); } }))),
-      app.sesion ? h("div", { class: "nota-seccion" },
-        h("h4", { text: `Del partido (${delPartido.length})` }),
-        delPartido.length ? delPartido.map(fila) : h("p", { class: "sub vacio-lista", text: "Sin notas de este partido. Crea una desde el partido en directo." })) : null,
-      h("div", { class: "nota-seccion" },
-        h("h4", { text: pid ? `Otras notas (${otras.length})` : `Notas (${otras.length})` }),
-        otras.length ? otras.map(fila) : h("p", { class: "sub vacio-lista", text: st.texto ? "Ninguna nota con ese filtro." : "Todavía no hay notas." })));
+      grupos.length
+        ? grupos.map(bloqueGrupo)
+        : h("p", { class: "sub vacio-lista", text: st.texto ? "Ninguna nota con ese filtro." : "Todavía no hay notas." }));
 
     const sel = st.notas.find((n) => n.id === st.sel) || null;
     const detalle = h("article", { class: "nota-detalle card" });
+    // Barra siempre presente para poder reabrir el explorador incluso sin nota seleccionada.
+    detalle.append(h("div", { class: "nota-detalle-barra" }, toggle("solo-plegado")));
     if (sel) {
       detalle.append(
         h("div", { class: "nd-cab" },
@@ -103,7 +142,6 @@ export function vistaNotas(cont, params = []) {
               sel.equipo_txt ? h("span", { class: "pill", text: `Equipo: ${sel.equipo_txt}` }) : null,
               sel.jugador_txt ? h("span", { class: "pill", text: `Jugador: ${sel.jugador_txt}` }) : null)),
           h("div", { class: "acciones" },
-            toggle("solo-plegado"),
             btn("Editar", () => abrirEditorNota(sel, { onGuardada: async (g) => { st.sel = g.id; await cargar(); } }), { clase: "btn pequeno primario", icon: "notas" }),
             btn("Borrar", () => borrar(sel), { clase: "btn pequeno fantasma peligro-txt", icon: "cerrar" }))),
         h("div", { class: "nota-fechas sub", text: `Creada: ${sel.creada || "—"}${sel.modificada ? " · Modificada: " + new Date(Number(sel.modificada)).toLocaleString("es-ES") : ""}` }),

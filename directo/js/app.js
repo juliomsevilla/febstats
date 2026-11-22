@@ -21,7 +21,6 @@ const RUTAS = {
 const NAV = [
   ["inicio", "Inicio", "inicio"],
   ["partido", "Directo", "partido"],
-  ["boxscore", "Boxscore", "boxscore"],
   ["notas", "Notas", "notas"],
   ["ajustes", "Ajustes", "ajustes"],
 ];
@@ -42,12 +41,29 @@ export function navegar(nombre, ...params) {
 function aplicarTema(t) {
   if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
   else delete document.documentElement.dataset.theme;
+  actualizarBotonTema();
+}
+
+function temaOscuroActual() {
+  const actual = document.documentElement.dataset.theme;
+  if (actual === "dark") return true;
+  if (actual === "light") return false;
+  return matchMedia("(prefers-color-scheme: dark)").matches;
+}
+
+function actualizarBotonTema() {
+  const b = document.querySelector("[data-tema]");
+  if (!b) return;
+  const oscuro = temaOscuroActual();
+  const texto = oscuro ? "Cambiar a tema claro" : "Cambiar a tema oscuro";
+  b.title = texto;
+  b.setAttribute("aria-label", texto);
+  const ico = b.querySelector(".ico");
+  if (ico) ico.replaceWith(icono(oscuro ? "sol" : "luna"));
 }
 
 function alternarTema() {
-  const actual = document.documentElement.dataset.theme;
-  const oscuro = actual ? actual === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
-  const nuevo = oscuro ? "light" : "dark";
+  const nuevo = temaOscuroActual() ? "light" : "dark";
   aplicarTema(nuevo);
   try { localStorage.setItem("tema", nuevo); } catch { /* sin almacenamiento */ }
 }
@@ -58,9 +74,10 @@ function construirShell() {
       h("img", { src: "icons/icon.svg", alt: "", class: "logo" }),
       h("div", null, h("b", { text: "FEBstats" }), h("span", { text: "DIRECTO" }))),
     h("div", { class: "cab-sesion", id: "cab-sesion" }),
-    h("button", { type: "button", class: "btn fantasma tema-btn", title: "Cambiar tema claro/oscuro", "aria-label": "Cambiar tema claro/oscuro", onclick: alternarTema }, icono("sol")),
     h("nav", { class: "nav", role: "navigation", "aria-label": "Secciones" },
-      NAV.map(([ruta, etiqueta, ic]) => h("a", { href: `#/${ruta}`, dataset: { ruta }, "aria-label": etiqueta, title: etiqueta }, icono(ic), h("span", { text: etiqueta })))));
+      NAV.map(([ruta, etiqueta, ic]) => h("a", { href: `#/${ruta}`, dataset: { ruta }, "aria-label": etiqueta, title: etiqueta }, icono(ic), h("span", { text: etiqueta }))),
+      h("button", { type: "button", class: "nav-tema", dataset: { tema: "1" }, title: "Cambiar tema claro/oscuro", "aria-label": "Cambiar tema claro/oscuro", onclick: alternarTema },
+        icono(temaOscuroActual() ? "sol" : "luna"), h("span", { text: "Tema" }))));
   document.body.prepend(cab);
   const main = h("main", { id: "vista", tabindex: "-1" });
   document.body.append(main);
@@ -145,6 +162,12 @@ async function arrancar() {
   try { app.soloConsulta = new URL(location.href).searchParams.has("notas"); } catch { app.soloConsulta = false; }
   try { aplicarTema(localStorage.getItem("tema")); } catch { /* sin almacenamiento */ }
   construirShell();
+  actualizarBotonTema();
+  try {
+    matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+      if (!document.documentElement.dataset.theme) actualizarBotonTema();
+    });
+  } catch { /* navegador antiguo */ }
   const main = document.getElementById("vista");
   main.append(h("div", { class: "vacio" }, h("strong", { text: "Cargando…" }), h("p", { text: "Abriendo los datos del iPad." })));
   try {

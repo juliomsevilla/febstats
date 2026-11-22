@@ -1,5 +1,5 @@
 // Nuevo partido: partido oficial de la FEB, o equipos libres (del JSON o creados desde cero).
-import { h, limpiar, btn, icono, toast, fechaCorta, jornadaTexto, dialogo } from "../util.js";
+import { h, limpiar, btn, icono, toast, fechaCorta, jornadaTexto, dialogo, nombreJugador } from "../util.js";
 import { crearCancha } from "../court.js";
 import { app, abrirGrupo, nuevaSesion, crearGrupoSinDatos } from "../estado.js";
 import { listarPartidos, plantillaDe, minutosRecientes, equiposDe, scoutingEquipo } from "../grupo.js";
@@ -19,6 +19,9 @@ export function vistaNuevo(cont) {
     nombres: { ...NOMBRE_DEF },
     manualNombre: { ...NOMBRE_DEF },
     manual: { local: { dorsales: DEF_DORSALES, nombres: "" }, visitante: { dorsales: DEF_DORSALES, nombres: "" } },
+    colores: { local: "#2a5fd0", visitante: "#c2332b" },
+    entrenadores: { local: "", visitante: "" },
+    staff: { local: "", visitante: "" },
     plantilla: { local: [], visitante: [] },
     titulares: new Set(),
     buscar: "",
@@ -119,6 +122,9 @@ export function vistaNuevo(cont) {
     st.nombres = { ...NOMBRE_DEF };
     st.manualNombre = { ...NOMBRE_DEF };
     st.manual = { local: { dorsales: DEF_DORSALES, nombres: "" }, visitante: { dorsales: DEF_DORSALES, nombres: "" } };
+    st.colores = { local: "#2a5fd0", visitante: "#c2332b" };
+    st.entrenadores = { local: "", visitante: "" };
+    st.staff = { local: "", visitante: "" };
     st.plantilla = { local: [], visitante: [] };
     st.titulares.clear();
     aplicarManual("local");
@@ -173,6 +179,23 @@ export function vistaNuevo(cont) {
 
     return h("div", { class: "roster-config" },
       h("label", null, h("span", { text: "Equipo" }), select),
+      h("div", { class: "roster-config-dos" },
+        h("label", null, h("span", { text: "Color del equipo" }),
+          h("input", {
+            type: "color", value: st.colores[lado],
+            oninput: (e) => {
+              st.colores[lado] = e.target.value;
+              e.target.closest(".roster")?.style.setProperty("--eq-color", e.target.value);
+            },
+          })),
+        h("label", null, h("span", { text: "Entrenador principal (opcional)" }),
+          h("input", { type: "text", value: st.entrenadores[lado], placeholder: "Nombre del entrenador", oninput: (e) => { st.entrenadores[lado] = e.target.value; } }))),
+      h("label", { class: "roster-staff" }, h("span", { text: "Cuerpo técnico (opcional, uno por línea)" }),
+        h("textarea", {
+          rows: 2, value: st.staff[lado],
+          placeholder: "Ayudante, preparador físico, delegado…",
+          oninput: (e) => { st.staff[lado] = e.target.value; },
+        })),
       campos);
   }
 
@@ -182,6 +205,7 @@ export function vistaNuevo(cont) {
     const tit = [...st.titulares].filter((t) => t.startsWith(lado + ":")).length;
     const lista = jugadores.map((j) => {
       const on = st.titulares.has(`${lado}:${j.dorsal}`);
+      const nombre = nombreJugador(j.nombre, j.dorsal);
       return h("li", { class: "jug-fila" + (on ? " titular" : "") },
         h("button", { type: "button", class: "jug-tit", "aria-pressed": on, onclick: () => {
           const k = `${lado}:${j.dorsal}`;
@@ -193,10 +217,10 @@ export function vistaNuevo(cont) {
           pintar();
         } },
           h("span", { class: "dorsal", text: `#${j.dorsal}` }),
-          h("span", { class: "nombre", text: j.nombre }),
+          nombre ? h("span", { class: "nombre", text: nombre }) : null,
           on ? h("span", { class: "pill ok", text: "Titular" }) : null));
     });
-    return h("article", { class: "card roster " + lado },
+    return h("article", { class: "card roster " + lado, style: `--eq-color:${st.colores[lado]}` },
       h("div", { class: "roster-cab" },
         h("div", null, h("h3", { text: nombre }), h("p", { class: "sub", text: `${lado === "local" ? "Local" : "Visitante"} · ${tit} titulares` })),
         h("span", { class: "pill", text: `${jugadores.length} jug.` })),
@@ -226,8 +250,10 @@ export function vistaNuevo(cont) {
     const inf = scoutingEquipo(app.grupo, equipoId);
     const c = inf.clas || {};
     const cancha = crearCancha({ interactiva: false });
-    cancha.pintarTiros(inf.tiros.slice(0, 900));
-    return h("article", { class: "card scouting " + lado },
+    cancha.pintarTiros(inf.tiros.slice(0, 900), {
+      basketPorTiro: () => (lado === "local" ? "left" : "right"),
+    });
+    return h("article", { class: "card scouting " + lado, style: `--eq-color:${st.colores[lado]}` },
       h("div", { class: "bt-cab" },
         h("div", null, h("h3", { text: nombre }), h("p", { class: "sub", text: `${c.pj ?? "—"} partidos · ${c.pg ?? "—"}V ${c.pp ?? "—"}D` })),
         h("span", { class: "pill", text: c.posicion ? `#${c.posicion}` : "—" })),
@@ -241,7 +267,7 @@ export function vistaNuevo(cont) {
       h("div", { class: "scout-jugadores" },
         inf.jugadores.slice(0, 5).map((j) => h("div", { class: "scout-jug" },
           h("span", { class: "dorsal", text: `#${j.dorsal}` }),
-          h("span", { class: "nombre", text: j.nombre }),
+          h("span", { class: "nombre", text: nombreJugador(j.nombre, j.dorsal) }),
           h("span", { class: "perfil", text: j.perfil || j.rol || "" }),
           h("b", { text: j.partidos ? (j.puntos / j.partidos).toFixed(1) : "—" })))),
       h("div", { class: "scout-cancha" }, cancha.el),
@@ -281,11 +307,12 @@ export function vistaNuevo(cont) {
       if (!ok) return;
     }
     st.cargando = true; pintar();
+    const staff = (lado) => String(st.staff[lado] || "").split("\n").map((x) => x.trim()).filter(Boolean);
     try {
       await nuevaSesion({
         grupoId: st.grupoId, partido: p,
-        local: { equipoId: st.fuente.local === "json" ? st.ids.local || null : null, nombre: st.nombres.local, jugadores: jug("local") },
-        visitante: { equipoId: st.fuente.visitante === "json" ? st.ids.visitante || null : null, nombre: st.nombres.visitante, jugadores: jug("visitante") },
+        local: { equipoId: st.fuente.local === "json" ? st.ids.local || null : null, nombre: st.nombres.local, color: st.colores.local, entrenador: st.entrenadores.local.trim(), staff: staff("local"), jugadores: jug("local") },
+        visitante: { equipoId: st.fuente.visitante === "json" ? st.ids.visitante || null : null, nombre: st.nombres.visitante, color: st.colores.visitante, entrenador: st.entrenadores.visitante.trim(), staff: staff("visitante"), jugadores: jug("visitante") },
         competicion: p ? st.competicion : "AMISTOSO",
         grupo: p ? st.grupo : "Amistoso",
         temporada: st.temporada,
@@ -322,7 +349,7 @@ export function vistaNuevo(cont) {
         seccionScouting(),
         h("div", { class: "acciones centradas" },
           btn("Intercambiar local/visitante", () => {
-            for (const k of ["fuente", "ids", "nombres", "manualNombre", "manual", "plantilla"]) {
+            for (const k of ["fuente", "ids", "nombres", "manualNombre", "manual", "plantilla", "colores", "entrenadores", "staff"]) {
               [st[k].local, st[k].visitante] = [st[k].visitante, st[k].local];
             }
             const tits = new Set();

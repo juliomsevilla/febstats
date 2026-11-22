@@ -1,4 +1,4 @@
-// Inicio: importar el paquete de datos, ver grupos y sesiones guardadas.
+// Inicio: importar el paquete de datos, grupos, partidos en directo y finalizados.
 import { h, limpiar, btn, icono, toast, dialogo, confirmar, fechaCorta, jornadaTexto, mmss, guardarArchivo } from "../util.js";
 import { app, cargarTodo, abrirGrupo, guardarGrupoEnIDB, cargarSesion, borrarSesion, exportarSesionActual, nombreArchivoExport, etiquetaPeriodo, crearGrupoSinDatos } from "../estado.js";
 import { normalizarPaquete, crearGrupoDesdePayload } from "../grupo.js";
@@ -18,16 +18,16 @@ function pintar(cont) {
     h("div", { class: "inicio-cab" },
       h("div", null,
         h("h1", { text: "Pista, reloj y boxscore" }),
-        h("p", { class: "sub", text: "Scouting en directo para Segunda y Tercera FEB. Todo se guarda en el iPad; sin red." })),
+        h("p", { class: "sub", text: "Anotación en directo para Segunda y Tercera FEB. Todo se guarda en el iPad; sin red." })),
       h("div", { class: "inicio-acciones" },
         botonImportar(cont),
-        sinDatos ? btn("Partido sin datos", empezarSinDatos, { clase: "btn", icon: "partido" }) : null,
-        app.sesion ? btn("Seguir en directo", () => navegar("partido"), { clase: "btn primario", icon: "partido" }) : null)),
+        botonExportar(cont),
+        sinDatos ? btn("Partido sin datos", empezarSinDatos, { clase: "btn", icon: "partido" }) : null)),
     sinDatos ? tarjetaImportar(cont) : null,
     app.grupos.length ? seccionGrupos(cont) : null,
-    app.sesiones.length ? seccionSesiones(cont) : null,
+    seccionPartidos(cont),
     h("p", { class: "nota-pie" },
-      "Los datos viven solo en este iPad. Exporta el .db al terminar y guárdalo en Files/iCloud: iOS puede liberar espacio.",
+      "Los datos viven solo en este iPad. El botón Exportar solo genera el .db de los partidos finalizados.",
       h("br"),
       "Formato admitido: FEBstats-iPad.json (paquete v3)."),
   ));
@@ -43,6 +43,50 @@ function botonImportar(cont) {
   const b = btn("Importar datos", () => input.click(), { clase: "btn", icon: "importar" });
   // El input NO va dentro del botón: su click burbujearía y volvería a abrir el selector.
   return h("span", { class: "importar-wrap" }, b, input);
+}
+
+function botonExportar(cont) {
+  const finalizados = app.sesiones.filter((s) => s.estado === "final");
+  return btn("Exportar .db", () => abrirExportar(cont), {
+    clase: "btn",
+    icon: "exportar",
+    disabled: !finalizados.length,
+    title: finalizados.length ? "Exportar un partido finalizado" : "No hay partidos finalizados",
+  });
+}
+
+function abrirExportar(cont) {
+  const finalizados = app.sesiones.filter((s) => s.estado === "final");
+  if (!finalizados.length) { toast("No hay partidos finalizados para exportar.", "aviso"); return; }
+  const d = dialogo("Exportar .db", h("div", { class: "exportar-lista" },
+    h("p", { class: "sub", text: "Solo se exportan partidos finalizados. Elige cuál quieres guardar." }),
+    finalizados.map((s) => {
+      const r = s.resumen || {};
+      return h("button", {
+        type: "button", class: "exportar-fila",
+        onclick: async () => { d.close(); await exportarPartido(s, cont); },
+      },
+        h("span", { class: "ef-eq", text: `${s.local.nombre} ${r.ptsLocal ?? 0}–${r.ptsVisitante ?? 0} ${s.visitante.nombre}` }),
+        h("span", { class: "sub", text: [s.competicion, s.fecha ? fechaCorta(s.fecha) : ""].filter(Boolean).join(" · ") || "Partido finalizado" }));
+    })));
+}
+
+async function exportarPartido(s, cont) {
+  const previa = app.sesion?.id || null;
+  try {
+    if (app.sesion?.id !== s.id) await cargarSesion(s.id);
+    const bytes = await exportarSesionActual();
+    const modo = await guardarArchivo(new Blob([bytes], { type: "application/vnd.sqlite3" }), nombreArchivoExport(s));
+    toast(modo === "compartido" ? "Elige «Guardar en Archivos»." : "Exportado: busca el .db en Archivos o en Descargas.", "ok");
+  } catch (e) {
+    console.error(e);
+    toast("No se pudo exportar: " + e.message, "error");
+  } finally {
+    if (previa && previa !== s.id) {
+      try { await cargarSesion(previa); } catch { /* sesión anterior ya no existe */ }
+    }
+    pintar(cont);
+  }
 }
 
 function tarjetaImportar(cont) {
@@ -116,47 +160,88 @@ function seccionGrupos(cont) {
         btn("Nuevo partido", async () => { await abrirGrupo(g.id); navegar("nuevo"); }, { clase: "btn primario", icon: "mas" }),
         btn(activo ? "Activo" : "Usar", async () => { await abrirGrupo(g.id); toast(`Grupo activo: ${r.competicion}`, "ok"); pintar(cont); }, { clase: "btn" }),
         btn("", async () => {
-          const ok = await confirmar("Quitar grupo", `Se borrarán de este iPad los datos de «${r.competicion} · ${r.grupo}». Las sesiones no se borran.`, { ok: "Quitar", peligro: true });
+          const ok = await confirmar("Quitar grupo", `Se borrarán de este iPad los datos de «${r.competicion} · ${r.grupo}». Los partidos no se borran.`, { ok: "Quitar", peligro: true });
           if (!ok) return;
           await idb.del("grupos", g.id);
           if (app.grupoId === g.id) { app.grupo = null; app.grupoId = null; }
           await cargarTodo(); pintar(cont);
         }, { clase: "btn fantasma peligro-txt", icon: "cerrar", "aria-label": "Quitar grupo" })));
   });
-  return h("section", { class: "seccion" }, h("div", { class: "seccion-cab" }, h("h2", { text: "Datos en este iPad" }), botonImportar(cont)), h("div", { class: "rejilla" }, cards));
+  return h("section", { class: "seccion" }, h("div", { class: "seccion-cab" }, h("h2", { text: "Datos en este iPad" })), h("div", { class: "rejilla" }, cards));
 }
 
-function seccionSesiones(cont) {
-  const cards = app.sesiones.map((s) => {
-    const enCurso = s.estado !== "final";
-    const esActual = app.sesion?.id === s.id;
-    const r = esActual && app.proy ? { ptsLocal: app.proy.pts.local, ptsVisitante: app.proy.pts.visitante, cuarto: s.reloj.cuarto, tipoPeriodo: s.reloj.tipoPeriodo, reloj: s.reloj.reloj } : (s.resumen || {});
-    return h("article", { class: "card sesion" + (enCurso ? " viva" : "") },
-      h("div", { class: "sesion-cab" },
-        h("div", { class: "sesion-eq" },
-          h("span", { text: s.local.nombre }),
-          h("b", { text: `${r.ptsLocal ?? 0}` }),
-          h("i", { text: "–" }),
-          h("b", { text: `${r.ptsVisitante ?? 0}` }),
-          h("span", { class: "der", text: s.visitante.nombre })),
-        h("span", { class: "pill " + (enCurso ? "ok" : ""), text: enCurso ? `${etiquetaPeriodo({ cuarto: r.cuarto, tipoPeriodo: r.tipoPeriodo })} · ${mmss(r.reloj ?? 0)}` : "Final" })),
-      h("p", { class: "sub", text: [s.competicion, jornadaTexto(s.jornada), s.fecha ? fechaCorta(s.fecha) : ""].filter(Boolean).join(" · ") + ` · ${s.local.nombre} vs ${s.visitante.nombre}` }),
-      h("div", { class: "acciones" },
-        btn("Continuar", async () => { await cargarSesion(s.id); navegar("partido"); }, { clase: "btn primario", icon: "play" }),
-        btn("Exportar .db", async () => {
-          try {
-            if (app.sesion?.id !== s.id) await cargarSesion(s.id);
-            const bytes = await exportarSesionActual();
-            await guardarArchivo(new Blob([bytes], { type: "application/vnd.sqlite3" }), nombreArchivoExport(s));
-          } catch (e) { toast(e.message, "error"); }
-        }, { clase: "btn", icon: "exportar" }),
-        btn("", async () => {
-          const ok = await confirmar("Borrar sesión", `Se borrará el registro de «${s.local.nombre} vs ${s.visitante.nombre}». Exporta antes el .db si lo necesitas.`, { ok: "Borrar", peligro: true });
-          if (!ok) return;
-          await borrarSesion(s.id); pintar(cont);
-        }, { clase: "btn fantasma peligro-txt", icon: "cerrar", "aria-label": "Borrar sesión" })));
-  });
+function seccionPartidos(cont) {
+  const enDirecto = app.sesiones.filter((s) => s.estado !== "final");
+  const finalizados = app.sesiones.filter((s) => s.estado === "final");
+  const bloque = (titulo, lista, vivo) => h("div", { class: "sesiones-grupo" },
+    h("div", { class: "seccion-cab" },
+      h("h3", { text: titulo }),
+      h("span", { class: "pill" + (vivo ? " ok" : ""), text: `${lista.length}` })),
+    lista.length
+      ? h("div", { class: "rejilla" }, lista.map((s) => tarjetaSesion(s, cont)))
+      : h("p", { class: "sub vacio-lista", text: vivo ? "No hay partidos en directo." : "No hay partidos finalizados." }));
+
   return h("section", { class: "seccion" },
-    h("div", { class: "seccion-cab" }, h("h2", { text: "Sesiones" }), h("span", { class: "pill", text: `${app.sesiones.length}` })),
-    h("div", { class: "rejilla" }, cards));
+    h("div", { class: "seccion-cab" },
+      h("h2", { text: "Partidos" }),
+      h("span", { class: "pill", text: `${enDirecto.length} en directo · ${finalizados.length} finalizados` })),
+    bloque("En directo", enDirecto, true),
+    bloque("Finalizados", finalizados, false));
+}
+
+function tarjetaSesion(s, cont) {
+  const enCurso = s.estado !== "final";
+  const esActual = app.sesion?.id === s.id;
+  const r = esActual && app.proy
+    ? { ptsLocal: app.proy.pts.local, ptsVisitante: app.proy.pts.visitante, cuarto: s.reloj.cuarto, tipoPeriodo: s.reloj.tipoPeriodo, reloj: relojActualSesion(s) }
+    : (s.resumen || {});
+  return h("article", {
+    class: "card sesion clickable" + (enCurso ? " viva" : "") + (esActual ? " actual" : ""),
+    tabindex: 0,
+    role: "button",
+    title: "Abrir el partido",
+    onclick: (e) => { if (e.target.closest("button")) return; abrirSesion(s, cont); },
+    onkeydown: (e) => {
+      if (e.target.closest("button")) return;
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); abrirSesion(s, cont); }
+    },
+  },
+    h("div", { class: "sesion-cab" },
+      h("div", { class: "sesion-eq" },
+        h("span", { text: s.local.nombre }),
+        h("b", { text: `${r.ptsLocal ?? 0}` }),
+        h("i", { text: "–" }),
+        h("b", { text: `${r.ptsVisitante ?? 0}` }),
+        h("span", { class: "der", text: s.visitante.nombre })),
+      h("span", { class: "pill " + (enCurso ? "ok" : ""), text: enCurso ? `${etiquetaPeriodo({ cuarto: r.cuarto, tipoPeriodo: r.tipoPeriodo })} · ${mmss(r.reloj ?? 0)}` : "Final" })),
+    h("p", { class: "sub", text: [s.competicion, jornadaTexto(s.jornada), s.fecha ? fechaCorta(s.fecha) : ""].filter(Boolean).join(" · ") + ` · ${s.local.nombre} vs ${s.visitante.nombre}` }),
+    h("div", { class: "acciones" },
+      btn("Eliminar", async (e) => { e.stopPropagation(); await eliminarSesion(s, cont); }, { clase: "btn pequeno fantasma peligro-txt", icon: "cerrar" })));
+}
+
+function relojActualSesion(s) {
+  if (s.reloj?.corriendo) {
+    const transcurrido = (Date.now() - (s.reloj.desde || Date.now())) / 1000;
+    return Math.max(0, (Number(s.reloj.reloj) || 0) - transcurrido);
+  }
+  return s.reloj?.reloj || 0;
+}
+
+async function abrirSesion(s, cont) {
+  try {
+    await cargarSesion(s.id);
+    navegar("partido");
+  } catch (e) {
+    toast("No se pudo abrir el partido: " + e.message, "error");
+    pintar(cont);
+  }
+}
+
+async function eliminarSesion(s, cont) {
+  const ok = await confirmar("Eliminar partido",
+    `Se borrará definitivamente «${s.local.nombre} vs ${s.visitante.nombre}» y todo su registro de acciones. Esta acción es irreversible.`,
+    { ok: "Eliminar", peligro: true });
+  if (!ok) return;
+  await borrarSesion(s.id);
+  pintar(cont);
 }

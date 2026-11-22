@@ -20,7 +20,7 @@ export const app = {
   eventos: [],
   proy: null,
   ladoAtaque: "local",
-  seleccion: null,    // {lado, dorsal}
+  seleccion: null,    // {lado, dorsal} o {lado, coach:true}
   escuchas: new Set(),
   guardando: false,
   errorGrupo: "",
@@ -141,14 +141,15 @@ export async function nuevaSesion({ grupoId, partido = null, local, visitante, c
     oficial: !!partido?.partido_id,
     competicion, grupo, temporada, jornada: jornada || partido?.jornada || "", fecha: fecha || partido?.fecha || "",
     pabellon,
-    local: { equipoId: local.equipoId || null, nombre: local.nombre },
-    visitante: { equipoId: visitante.equipoId || null, nombre: visitante.nombre },
+    local: { equipoId: local.equipoId || null, nombre: local.nombre, color: local.color || "#2a5fd0", entrenador: local.entrenador || "", staff: normalizarStaff(local.staff) },
+    visitante: { equipoId: visitante.equipoId || null, nombre: visitante.nombre, color: visitante.color || "#c2332b", entrenador: visitante.entrenador || "", staff: normalizarStaff(visitante.staff) },
     jugadores: {
       local: normalizarJugadores(local.jugadores),
       visitante: normalizarJugadores(visitante.jugadores),
     },
     estado: "en_curso", inicio: selloLocal(), fin: null, creado: selloLocal(),
     reloj: { cuarto: 1, tipoPeriodo: "regular", reloj: DURACION.regular, corriendo: false, desde: null },
+    defensas: {},   // { [cuarto]: "local"|"visitante" } = equipo que defiende la zona izquierda
     ladoAtaque: "local", ultimoN: 0, version: 1,
   };
   await idb.put("sesiones", sesion);
@@ -158,6 +159,10 @@ export async function nuevaSesion({ grupoId, partido = null, local, visitante, c
   await iniciarPeriodo(1, "regular", { silencioso: true, posesion: false });
   await agregar("posesion", { lado: "local" });
   return sesion;
+}
+
+function normalizarStaff(lista) {
+  return (Array.isArray(lista) ? lista : []).map((n) => String(n || "").trim()).filter(Boolean);
 }
 
 function normalizarJugadores(lista) {
@@ -294,6 +299,8 @@ export async function iniciarPeriodo(cuarto, tipoPeriodo = "regular", { silencio
   const dur = DURACION[tipoPeriodo] || DURACION.regular;
   s.reloj = { cuarto, tipoPeriodo, reloj: dur, corriendo: false, desde: null };
   s.estado = "en_curso";
+  // En cada cuarto nuevo se vuelve a preguntar qué equipo defiende cada zona.
+  if (s.defensas) delete s.defensas[cuarto];
   await agregar("periodo", { datos: { accion: "inicio", cuarto, tipoPeriodo, duracion: dur, silencioso } });
   if (posesion) await agregar("posesion", { lado: app.ladoAtaque });
 }
@@ -339,6 +346,63 @@ export async function cambiarAtaqueSi(cond) {
   if (!cond) return;
   const otro = app.ladoAtaque === "local" ? "visitante" : "local";
   await cambiarAtaque(otro);
+}
+
+// ---------------- defensa de zona ----------------
+
+/** Equipo que defiende la zona izquierda del cuarto indicado. */
+export function equipoDefensor(cuarto = app.sesion?.reloj?.cuarto ?? 1) {
+  const guardado = app.sesion?.defensas?.[cuarto];
+  if (guardado === "local" || guardado === "visitante") return guardado;
+  // Sin indicación expresa: en la primera parte defiende el local a la izquierda.
+  return cuarto <= 2 ? "local" : "visitante";
+}
+
+export function defensaIndicada(cuarto = app.sesion?.reloj?.cuarto ?? 1) {
+  const d = app.sesion?.defensas?.[cuarto];
+  return d === "local" || d === "visitante";
+}
+
+export async function marcarDefensa(cuarto, lado) {
+  const s = app.sesion;
+  if (!s || (lado !== "local" && lado !== "visitante")) return;
+  s.defensas = { ...(s.defensas || {}), [cuarto]: lado };
+  await guardarSesion();
+  avisar();
+}
+
+// ---------------- corrección del registro ----------------
+
+/** Edita un evento ya registrado (no cambia su número ni su instante). */
+export async function editarEvento(uid, cambios = {}) {
+  const i = app.eventos.findIndex((e) => e.uid === uid);
+  if (i < 0) return null;
+  const previo = app.eventos[i];
+  const ev = { ...previo, ...cambios, datos: { ...(previo.datos || {}), ...(cambios.datos || {}) } };
+  // Si cambia el lado o el dorsal, se recompone la identidad visible.
+  if (ev.lado && app.sesion?.[ev.lado]) {
+    ev.equipo = app.sesion[ev.lado].nombre;
+    ev.equipoId = app.sesion[ev.lado].equipoId || null;
+    if (ev.dorsal != null) {
+      const j = app.sesion.jugadores[ev.lado]?.find((x) => x.dorsal === String(ev.dorsal));
+      ev.jugador = j?.nombre || ev.jugador || null;
+      ev.jugadorId = j?.jugadorId || null;
+    }
+  }
+  await idb.put("eventos", ev);
+  app.eventos[i] = ev;
+  reproyectar();
+  await guardarSesion();
+  avisar();
+  return ev;
+}
+
+/** Elimina una acción concreta del registro (queda como anulada). */
+export async function eliminarEvento(uid) {
+  const ev = app.eventos.find((e) => e.uid === uid);
+  if (!ev) return false;
+  await agregar("anulacion", { datos: { ref: uid, tipo: ev.t } });
+  return true;
 }
 
 // ---------------- exportación ----------------

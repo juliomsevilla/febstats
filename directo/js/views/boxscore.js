@@ -1,6 +1,6 @@
 // Boxscore en directo de los dos equipos, con totales y mapa de tiros.
-import { h, limpiar, btn, mmss, jornadaTexto, guardarArchivo, toast } from "../util.js";
-import { app, exportarSesionActual, nombreArchivoExport, etiquetaPeriodo, relojAhora } from "../estado.js";
+import { h, limpiar, btn, mmss, jornadaTexto, nombreJugador } from "../util.js";
+import { app, etiquetaPeriodo, relojAhora } from "../estado.js";
 import { statsVacias, valoracion } from "../grupo.js";
 import { crearCancha } from "../court.js";
 import { navegar } from "../app.js";
@@ -24,12 +24,9 @@ export function vistaBoxscore(cont) {
           h("span", { text: s.local.nombre }), h("b", { text: `${p.pts.local}` }), h("i", { text: "–" }), h("b", { text: `${p.pts.visitante}` }), h("span", { class: "der", text: s.visitante.nombre }),
           h("span", { class: "pill", text: `${etiquetaPeriodo(s.reloj)} · ${mmss(relojAhora(s.reloj))}` })) , 
         h("div", { class: "acciones" },
-          btn("Exportar .db", async () => {
-            try { const bytes = await exportarSesionActual(); await guardarArchivo(new Blob([bytes], { type: "application/vnd.sqlite3" }), nombreArchivoExport()); toast("Exportado.", "ok"); }
-            catch (e) { toast(e.message, "error"); }
-          }, { clase: "btn", icon: "exportar" }))),
-      h("div", { class: "rejilla dos" }, tablaEquipo("local"), tablaEquipo("visitante")),
-      h("div", { class: "rejilla dos" }, mapa("local"), mapa("visitante")),
+          btn("Volver al partido", () => navegar("partido"), { clase: "btn pequeno", icon: "play" }))),
+      h("div", { class: "rejilla dos box-tablas" }, tablaEquipo("local"), tablaEquipo("visitante")),
+      h("div", { class: "rejilla dos box-mapas" }, mapa("local"), mapa("visitante")),
       h("p", { class: "nota-pie", text: "MIN se calcula con el reloj y los cambios. VAL = fórmula FEB. El +/- suma el tanteo mientras el jugador está en pista." })));
   }
 
@@ -41,7 +38,7 @@ export function vistaBoxscore(cont) {
       if (vistos.has(String(j.dorsal))) continue;
       vistos.add(String(j.dorsal));
       const st = p.jugadores[lado][j.dorsal] || statsVacias();
-      filas.push({ ...st, dorsal: j.dorsal, nombre: j.nombre, enPista: p.oncourt[lado].includes(j.dorsal), titular: j.titular });
+      filas.push({ ...st, dorsal: j.dorsal, nombre: nombreJugador(j.nombre, j.dorsal), enPista: p.oncourt[lado].includes(j.dorsal), titular: j.titular });
     }
     const cols = [
       { key: "dorsal", label: "#" },
@@ -59,6 +56,7 @@ export function vistaBoxscore(cont) {
       { key: "recuperaciones", label: "ROB", num: true },
       { key: "perdidas", label: "PER", num: true },
       { key: "tapones", label: "TAP", num: true, val: (r) => r.taponesFavor },
+      { key: "disruptivas", label: "DI", num: true },
       { key: "faltas", label: "FC", num: true },
       { key: "faltasRecibidas", label: "FR", num: true },
       { key: "masMenos", label: "+/-", num: true, fmt: (v) => (v > 0 ? "+" + v : v) },
@@ -91,15 +89,17 @@ export function vistaBoxscore(cont) {
       if (c.key === "segundos") return h("td", { class: "num" }, mmss(eq.segundos));
       return h("td", { class: c.num ? "num" : "" }, String(eq[c.key] ?? ""));
     })));
-    return h("article", { class: "card box-tabla " + lado },
+    return h("article", { class: "card box-tabla " + lado, style: `--eq-color:${s[lado].color || (lado === "local" ? "#2a5fd0" : "#c2332b")}` },
       h("div", { class: "bt-cab" }, h("h3", { text: s[lado].nombre }), h("span", { class: "pill", text: `${p.pts[lado]} pts` })),
       h("div", { class: "tabla-wrap" }, h("table", { class: "tabla box" }, head, body, foot)));
   }
 
   function mapa(lado) {
     const cancha = crearCancha({ interactiva: false });
-    cancha.pintarTiros(app.proy.tiros.filter((t) => t.lado === lado && t.Xinv != null));
-    return h("article", { class: "card mapa-card" },
+    cancha.pintarTiros(app.proy.tiros.filter((t) => t.lado === lado && t.Xinv != null), {
+      basketPorTiro: (t) => t.basket || (lado === "local" ? "left" : "right"),
+    });
+    return h("article", { class: "card mapa-card", style: `--eq-color:${app.sesion[lado].color || (lado === "local" ? "#2a5fd0" : "#c2332b")}` },
       h("div", { class: "bt-cab" }, h("h3", { text: `Tiros · ${app.sesion[lado].nombre}` }),
         h("span", { class: "pill", text: `${app.proy.tiros.filter((t) => t.lado === lado).length} tiros` })),
       cancha.el);
