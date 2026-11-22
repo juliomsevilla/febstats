@@ -126,3 +126,35 @@ export function notaDeSesion(sesion, { cuerpo = "", lado = null, jugador = null 
     jugador_txt: jugador?.nombre || "",
   });
 }
+
+// ---------------- enlaces entre notas: [[Título]] y [[nota:ID|Título]] (como en FEBstats para Mac) ----------------
+
+export const plegar = (t) => String(t ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
+const RE_WIKI = /\[\[([^\]\n|]+)(?:\|([^\]\n]+))?\]\]/g;
+
+/** Destinos de los [[…]] de un cuerpo (sin duplicados). */
+export function enlacesDeNota(cuerpo) {
+  return [...new Set([...String(cuerpo || "").matchAll(RE_WIKI)].map((m) => m[1].trim()))];
+}
+
+/** Nota a la que apunta un enlace: por id (`nota:ID`) o por título sin distinguir mayúsculas ni tildes. */
+export function resolverNota(notas, nombre) {
+  const t = String(nombre ?? "").trim();
+  const id = t.match(/^nota:(.+)$/);
+  if (id) return notas.find((n) => String(n.id) === id[1]) || null;
+  const q = plegar(t);
+  if (!q) return null;
+  return notas.find((n) => plegar(tituloDeNota(n)) === q) || null;
+}
+
+/** Texto que se escribe dentro de [[…]] para enlazar a una nota: el título, o `nota:ID|Título` si hay títulos repetidos. */
+export function refDeNota(notas, n) {
+  const t = tituloDeNota(n);
+  const repetido = notas.filter((m) => plegar(tituloDeNota(m)) === plegar(t)).length > 1;
+  return repetido ? `nota:${n.id}|${t.replace(/[\[\]|]/g, "")}` : t.replace(/[\[\]|]/g, "");
+}
+
+/** Notas que enlazan a `n` (enlaces inversos, calculados al vuelo). */
+export function enlazanA(notas, n) {
+  return notas.filter((m) => m.id !== n.id && enlacesDeNota(m.cuerpo).some((e) => resolverNota(notas, e)?.id === n.id));
+}

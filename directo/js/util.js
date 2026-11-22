@@ -234,8 +234,11 @@ export function md(texto) {
 }
 
 /** Markdown de notas: las imágenes relativas del paquete se muestran como marcador (no rompen la vista). */
+import { md as mdCompartido } from "./md.js";
+
 export function mdNota(texto) {
-  return md(texto).replace(/<img\b([^>]*)>/g, (tag, attrs) => {
+  // Mismo renderizador que FEBstats Companion: enlaces [[nota]] y tablas, código y notas al pie.
+  return mdCompartido(texto).replace(/<img\b([^>]*)>/g, (tag, attrs) => {
     const src = (attrs.match(/\bsrc="([^"]*)"/) || [])[1] || "";
     if (/^(data:|https?:)/i.test(src)) return tag;
     const alt = (attrs.match(/\balt="([^"]*)"/) || [])[1] || "";

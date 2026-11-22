@@ -1,5 +1,5 @@
 // Service worker: la app entera queda en caché para funcionar sin red en pista.
-const VERSION = "fd-2026-11-22-23";
+const VERSION = "fd-2026-11-22-24";
 const ASSETS = [
   "./", "index.html", "manifest.webmanifest", "css/app.css",
   "vendor/sql-wasm.js", "vendor/sql-wasm.wasm",

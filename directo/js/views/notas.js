@@ -1,9 +1,9 @@
 // Notas del partido: lista/explorador plegable y detalle a pantalla completa.
 // Se crean desde la ventana del partido (heredan temporada, grupo y partido); aquí se leen y editan.
-import { h, limpiar, btn, icono, mdNota, confirmar } from "../util.js";
+import { h, limpiar, btn, icono, mdNota, confirmar, toast } from "../util.js";
 import { app } from "../estado.js";
 import { navegar } from "../app.js";
-import { listarNotas, borrarNota, tituloDeNota, suscribirNotas } from "../notas-modelo.js";
+import { listarNotas, borrarNota, tituloDeNota, suscribirNotas, guardarNota, avisarCambioNotas, resolverNota, enlazanA, enlacesDeNota } from "../notas-modelo.js";
 import { abrirEditorNota } from "../notas-editor.js";
 import { imagenDe } from "../grupo.js";
 
@@ -145,7 +145,10 @@ export function vistaNotas(cont, params = []) {
             btn("Editar", () => abrirEditorNota(sel, { onGuardada: async (g) => { st.sel = g.id; await cargar(); } }), { clase: "btn pequeno primario", icon: "notas" }),
             btn("Borrar", () => borrar(sel), { clase: "btn pequeno fantasma peligro-txt", icon: "cerrar" }))),
         h("div", { class: "nota-fechas sub", text: `Creada: ${sel.creada || "—"}${sel.modificada ? " · Modificada: " + new Date(Number(sel.modificada)).toLocaleString("es-ES") : ""}` }),
-        h("div", { class: "md nota-cuerpo", html: mdNota(sel.cuerpo) }));
+        h("div", { class: "md nota-cuerpo", html: mdNota(sel.cuerpo) }),
+        enlacesSalientes(sel),
+        enlacesEntrantes(sel));
+      marcarWiki(detalle.querySelector(".nota-cuerpo"));
       resolverImagenes(detalle);
     } else {
       detalle.append(h("div", { class: "vacio" },
@@ -162,6 +165,52 @@ export function vistaNotas(cont, params = []) {
     await borrarNota(n.id);
     st.sel = null;
     await cargar();
+  }
+
+  // Enlaces [[…]]: clic para abrir la nota; si no existe, se ofrece crearla con ese título.
+  function marcarWiki(el) {
+    if (!el) return;
+    for (const a of el.querySelectorAll('a[href^="#wiki="]')) {
+      const nombre = decodeURIComponent(a.getAttribute("href").slice(6));
+      const ok = resolverNota(st.notas, nombre);
+      a.classList.add("wiki");
+      a.classList.toggle("wiki-nueva", !ok);
+      a.title = ok ? `Abrir «${tituloDeNota(ok)}»` : `La nota «${nombre}» no existe todavía: clic para crearla`;
+      a.addEventListener("click", (ev) => { ev.preventDefault(); abrirWiki(nombre); });
+    }
+  }
+
+  async function abrirWiki(nombre) {
+    const n = resolverNota(st.notas, nombre);
+    if (n) { st.sel = n.id; pintar(); return; }
+    const sel = st.notas.find((x) => x.id === st.sel);
+    const ok = await confirmar("Crear nota", `No existe ninguna nota llamada «${nombre}». ¿Crearla? Heredará temporada, grupo, partido y vínculos de la nota actual.`, { ok: "Crear nota" });
+    if (!ok) return;
+    const heredado = sel ? { temporada: sel.temporada, grupo: sel.grupo, partido: sel.partido, partido_txt: sel.partido_txt, equipo: sel.equipo, equipo_txt: sel.equipo_txt, jugador: sel.jugador, jugador_txt: sel.jugador_txt } : {};
+    try {
+      const g = await guardarNota({ ...heredado, titulo: nombre, cuerpo: `# ${nombre}\n\n` });
+      avisarCambioNotas();
+      st.sel = g.id;
+      await cargar();
+    } catch (e) { toast("No se pudo crear la nota: " + e.message, "error"); }
+  }
+
+  // Enlaces que salen de la nota y notas que enlazan a ella.
+  function enlacesSalientes(n) {
+    const destinos = enlacesDeNota(n.cuerpo);
+    if (!destinos.length) return h("span");
+    return h("div", { class: "nota-enlaces" }, h("h4", { text: "Enlaza con" }),
+      h("div", { class: "nota-enlaces-lista" }, destinos.map((d) => {
+        const t = resolverNota(st.notas, d);
+        return h("button", { type: "button", class: "chip-asistencia" + (t ? "" : " wiki-nueva"), onclick: () => abrirWiki(d) }, t ? tituloDeNota(t) : d);
+      })));
+  }
+
+  function enlacesEntrantes(n) {
+    const entran = enlazanA(st.notas, n);
+    if (!entran.length) return h("span");
+    return h("div", { class: "nota-enlaces" }, h("h4", { text: "Enlazada desde" }),
+      h("div", { class: "nota-enlaces-lista" }, entran.map((m) => h("button", { type: "button", class: "chip-asistencia", onclick: () => { st.sel = m.id; pintar(); } }, tituloDeNota(m)))));
   }
 
   function resolverImagenes(el) {

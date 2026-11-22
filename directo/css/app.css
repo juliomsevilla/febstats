@@ -786,3 +786,16 @@ select { max-width: 280px; }
 .md a.md-cap { color: var(--acento-texto); font-weight: 600; text-decoration: underline; }
 .md-tabla { overflow-x: auto; margin: 8px 0 14px; } .md-tabla table { border-collapse: collapse; font-size: 13px; width: 100%; } .md-tabla th, .md-tabla td { border: 1px solid var(--borde); padding: 6px 9px; text-align: left; vertical-align: top; } .md-tabla th { background: var(--panel-2); }
 .ayu-autoria { max-width: 70ch; } .ayu-dl { display: grid; grid-template-columns: 110px 1fr; gap: 8px 14px; margin: 14px 0; } .ayu-dl dt { color: var(--suave); font-weight: 600; } .ayu-dl dd { margin: 0; }
+
+/* ---------- Enlaces entre notas [[…]] (como en FEBstats para Mac) ---------- */
+.md a.wiki { color: var(--acento-texto); font-weight: 600; text-decoration: none; border-bottom: 1px solid currentColor; cursor: pointer; }
+.md a.wiki-nueva { opacity: .65; border-bottom-style: dashed; }
+.nota-ayuda-enlaces { margin: 6px 0 2px; }
+.wiki-sug { display: flex; flex-direction: column; gap: 2px; margin-top: 6px; padding: 4px; border: 1px solid var(--borde); border-radius: 10px; background: var(--panel); max-height: 220px; overflow: auto; }
+.wiki-sug[hidden] { display: none !important; }
+.wiki-sug-op { display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 40px; padding: 6px 10px; border: 0; border-radius: 8px; background: none; color: var(--texto); text-align: left; }
+.wiki-sug-op.on, .wiki-sug-op:hover { background: var(--acento-soft); }
+.nota-enlaces { margin-top: 16px; }
+.nota-enlaces h4 { font-size: 13px; color: var(--suave); margin-bottom: 6px; }
+.nota-enlaces-lista { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip-asistencia.wiki-nueva { opacity: .65; border-style: dashed; }

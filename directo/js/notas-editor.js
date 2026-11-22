@@ -2,7 +2,7 @@
 // heredan temporada, grupo, partido y solo se vinculan (opcionalmente) a equipo y jugador.
 import { h, btn, dialogo, mdNota, toast } from "./util.js";
 import { app } from "./estado.js";
-import { guardarNota, notaNueva, avisarCambioNotas } from "./notas-modelo.js";
+import { guardarNota, notaNueva, avisarCambioNotas, listarNotas, plegar, refDeNota, tituloDeNota } from "./notas-modelo.js";
 
 const BARRA = [
   ["B", "negrita", "Negrita (Cmd+B)"], ["I", "cursiva", "Cursiva (Cmd+I)"], ["S", "tachado", "Tachado"],
@@ -77,7 +77,45 @@ export function abrirEditorNota(nota = null, opts = {}) {
   try { vista = localStorage.getItem("fd-nota-vista") || "dividida"; } catch { /* nada */ }
   if (!["editor", "dividida", "previa"].includes(vista)) vista = "dividida";
 
-  const panes = h("div", { class: "nota-panes " + vista }, h("div", { class: "nota-pane-editor" }, ta), h("div", { class: "nota-pane-preview" }, preview));
+  // Autocompletado de [[: al escribir «[[» se ofrecen las notas que coinciden; Intro o clic inserta el enlace.
+  let todas = [], sugs = [], marca = -1, ini = -1;
+  listarNotas().then((n) => { todas = n; }).catch(() => {});
+  const lista = h("div", { class: "wiki-sug", role: "listbox", "aria-label": "Notas para enlazar", hidden: true });
+  const cerrarSug = () => { lista.hidden = true; lista.replaceChildren(); sugs = []; marca = -1; ini = -1; };
+  const elegir = (n) => {
+    const c = ta.selectionStart;
+    ta.setRangeText(`[[${refDeNota(todas, n)}]]`, ini, c, "end");
+    sync(); cerrarSug(); ta.focus();
+  };
+  const pintarSug = () => {
+    lista.replaceChildren(...sugs.map((n, i) => h("button", {
+      type: "button", role: "option", "aria-selected": String(i === marca), class: "wiki-sug-op" + (i === marca ? " on" : ""),
+      onmousedown: (e) => e.preventDefault(), onclick: () => elegir(n),
+    }, h("b", { text: tituloDeNota(n) }), h("span", { class: "sub", text: refDeNota(todas, n).startsWith("nota:") ? "Título repetido: se enlaza por id" : "" }))));
+    lista.hidden = !sugs.length;
+  };
+  const buscarSug = () => {
+    const v = ta.value, c = ta.selectionStart;
+    const i = v.lastIndexOf("[[", c - 1);
+    const tramo = i >= 0 ? v.slice(i + 2, c) : null;
+    if (tramo === null || /[\]\n|]/.test(tramo)) { cerrarSug(); return; }
+    ini = i;
+    const q = plegar(tramo);
+    sugs = todas.filter((n) => n.id !== nota?.id && plegar(tituloDeNota(n)).includes(q)).slice(0, 6);
+    marca = sugs.length ? 0 : -1;
+    pintarSug();
+  };
+  ta.addEventListener("input", buscarSug);
+  ta.addEventListener("click", cerrarSug);
+  ta.addEventListener("keydown", (e) => {
+    if (lista.hidden) return;
+    if (e.key === "ArrowDown") { e.preventDefault(); marca = (marca + 1) % sugs.length; pintarSug(); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); marca = (marca - 1 + sugs.length) % sugs.length; pintarSug(); }
+    else if (e.key === "Enter" && marca >= 0) { e.preventDefault(); elegir(sugs[marca]); }
+    else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); cerrarSug(); }
+  });
+
+  const panes = h("div", { class: "nota-panes " + vista }, h("div", { class: "nota-pane-editor" }, ta, lista), h("div", { class: "nota-pane-preview" }, preview));
   const sync = () => { form.cuerpo = ta.value; preview.innerHTML = mdNota(ta.value); };
   const vistaSeg = h("div", { class: "seg nota-vista", role: "radiogroup", "aria-label": "Vista" },
     [["editor", "Editor"], ["dividida", "Dividida"], ["previa", "Vista previa"]].map(([v, t]) => h("button", {
@@ -144,6 +182,7 @@ export function abrirEditorNota(nota = null, opts = {}) {
     h("p", { class: "sub nota-contexto", text: contexto }),
     h("div", { class: "nota-form-dos" }, campo("Equipo", equipo), campo("Jugador", jugador)),
     barra,
+    h("p", { class: "sub nota-ayuda-enlaces", text: "Enlaces: escribe [[ y el título de otra nota para enlazarla (como en Obsidian). Clic en el enlace de la vista previa para abrirla." }),
     h("div", { class: "nota-editor-barra2" }, vistaSeg, h("span", { class: "sub", text: "Markdown · se guarda en este iPad" })),
     panes,
     h("div", { class: "acciones" },
