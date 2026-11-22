@@ -422,6 +422,19 @@ export async function editarEvento(uid, cambios = {}) {
   return ev;
 }
 
+/** Añade a la plantilla de la sesión un jugador que no estaba (p. ej. un rival cuyo dorsal no se conocía). */
+export async function anadirJugador(lado, dorsal, nombre = "") {
+  const s = app.sesion;
+  if (!s) throw new Error("No hay sesión abierta.");
+  const d = String(dorsal ?? "").trim();
+  if (!d) throw new Error("Escribe el dorsal.");
+  if (s.jugadores[lado].some((j) => j.dorsal === d)) throw new Error(`El dorsal ${d} ya está en ${s[lado].nombre}.`);
+  s.jugadores[lado].push({ dorsal: d, nombre: String(nombre).trim() || `#${d}`, jugadorId: null, titular: false, orden: s.jugadores[lado].length });
+  await guardarSesion();
+  reproyectar();
+  avisar();
+}
+
 /** Elimina una acción concreta del registro (queda como anulada). */
 export async function eliminarEvento(uid) {
   const ev = app.eventos.find((e) => e.uid === uid);

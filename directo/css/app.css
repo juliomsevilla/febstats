@@ -749,3 +749,19 @@ select { max-width: 280px; }
   .gira strong { font-size: 20px; }
   .gira span { color: var(--suave); }
 }
+
+/* ---------- Tiros libres, rebote, cambios múltiples ---------- */
+.tl-opciones { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 12px; }
+.tl-opciones .btn { min-height: 56px; font-size: 16px; font-weight: 700; }
+.tl-dialogo .chips-asistencia { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.tira-rebote { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+.tira-rebote .tt-cab { flex-basis: 100%; }
+.rebote-eq { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 6px 8px; border-left: 4px solid var(--eq-color, var(--acento)); background: var(--panel-2); border-radius: 8px; }
+.sup-herr { display: flex; gap: 6px; margin: 2px 0 6px; }
+.sup-herr .btn { min-height: 36px; }
+.aviso-pista { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; padding: 7px 9px; border-radius: 9px; background: var(--mal-soft); color: var(--mal); font-weight: 650; font-size: 12.5px; }
+.cambios-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.cambios-col { display: flex; flex-direction: column; gap: 6px; }
+.cambios-col h4 { color: var(--suave); font-size: 12.5px; text-transform: uppercase; letter-spacing: .04em; }
+.cambios-col .jug-banco { min-height: 48px; width: 100%; }
+.nuevo-jugador { display: grid; gap: 10px; }

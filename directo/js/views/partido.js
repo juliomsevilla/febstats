@@ -1,7 +1,7 @@
 // Pantalla de partido en directo: marcador, controles, pista y acciones laterales.
 import { h, limpiar, btn, toast, dialogo, confirmar, mmss, jornadaTexto, nombreJugador, etiquetaJugador } from "../util.js";
 import {
-  app, suscribir, agregar, deshacer, lote, iniciarReloj, pararReloj, ajustarReloj, relojActual,
+  app, suscribir, agregar, deshacer, lote, anadirJugador, iniciarReloj, pararReloj, ajustarReloj, relojActual,
   iniciarPeriodo, finPeriodo, finalizar, siguientePeriodo, cambiarAtaque,
   etiquetaPeriodo, equipoDefensor, defensaIndicada, marcarDefensa, editarEvento, eliminarEvento,
 } from "../estado.js";
@@ -37,6 +37,8 @@ export function vistaPartido(cont) {
   let ubicacion = null;              // { xinv, yinv, basket } al tocar la pista
   let pendiente = null;              // { tipo: 1|2|3, tl, xinv, yinv, basket }
   let asistencia = null;             // { lado, tiroUid }
+  let serieTL = null;                // { lado, dorsal, total, hechos, codigo }: serie de tiros libres tras una falta
+  let rebote = null;                 // { ladoTirador, tiroUid }: rebote pendiente tras un tiro fallado
   let verTodos = false;
   let pidiendoDefensa = false;
 
@@ -233,6 +235,7 @@ export function vistaPartido(cont) {
     return h("section", { class: "pista-central" },
       barraTiros(),
       asistencia ? tiraAsistencia() : null,
+      rebote ? tiraRebote() : null,
       canchaWrap(),
       piePista(),
       accionesFila());
@@ -314,7 +317,7 @@ export function vistaPartido(cont) {
 
   function tarjetaTiroFlotante() {
     const p = pendiente;
-    const tipo = p.tl ? "Tiro libre" : p.tipo === 3 ? "Triple" : "2 puntos";
+    const tipo = p.tl ? (serieTL ? `Tiro libre ${serieTL.hechos + 1} de ${serieTL.total}` : "Tiro libre") : p.tipo === 3 ? "Triple" : "2 puntos";
     const dorsal = app.seleccion?.dorsal ?? "";
     const nombre = nombreJugador(nombreSel(), dorsal);
     const etiqueta = nombre ? `#${dorsal} ${nombreCorto(nombre)}` : `#${dorsal}`;
@@ -331,7 +334,38 @@ export function vistaPartido(cont) {
       h("div", { class: "ttf-acciones" },
         h("button", { type: "button", class: "btn anota", onclick: () => registrarTiro("acierto") }, "ANOTA"),
         h("button", { type: "button", class: "btn falla", onclick: () => registrarTiro("fallo") }, "FALLA"),
-        h("button", { type: "button", class: "btn fantasma", onclick: () => { pendiente = null; ubicacion = null; pintar(); } }, "Cancelar")));
+        h("button", { type: "button", class: "btn fantasma", onclick: () => { pendiente = null; ubicacion = null; serieTL = null; pintar(); } }, serieTL ? "Dejar la serie" : "Cancelar")));
+  }
+
+  // Tras un tiro fallado (o el último tiro libre fallado) se pregunta quién se lleva el rebote.
+  function tiraRebote() {
+    const grupo = (lado) => {
+      const enPista = app.proy?.oncourt[lado] || [];
+      return h("div", { class: "rebote-eq", style: estiloLado(lado) },
+        h("b", { text: equipo(lado).nombre }),
+        enPista.map((d) => {
+          const j = jugadores(lado).find((x) => x.dorsal === String(d));
+          const nombre = nombreJugador(j?.nombre, d);
+          return h("button", { type: "button", class: "chip-asistencia", onclick: () => elegirRebote(lado, d) }, nombre ? `#${d} ${nombreCorto(nombre)}` : `#${d}`);
+        }),
+        h("button", { type: "button", class: "chip-asistencia", onclick: () => elegirRebote(lado, null) }, "Equipo"));
+    };
+    return h("div", { class: "tira-asistencia tira-rebote" },
+      h("div", { class: "tt-cab" }, h("b", { text: "¿Rebote?" }), h("span", { class: "sub", text: "Toca quién lo coge, «Equipo» si no hay un jugador claro, o «Nadie» si sale fuera" })),
+      grupo(rebote.ladoTirador), grupo(otroLado(rebote.ladoTirador)),
+      h("button", { type: "button", class: "btn fantasma", onclick: () => { rebote = null; pintar(); } }, "Nadie"));
+  }
+
+  async function elegirRebote(lado, dorsal) {
+    const r = rebote;
+    rebote = null;
+    if (!r) return;
+    const tipo = lado === r.ladoTirador ? "of" : "def";
+    await lote(async () => {
+      await agregar("rebote", { lado, dorsal: dorsal == null ? undefined : String(dorsal), datos: { tipo, equipo: dorsal == null } });
+      if (tipo === "def") await cambiarAtaque(lado);
+    });
+    pintar();
   }
 
   function tiraAsistencia() {
@@ -426,9 +460,13 @@ export function vistaPartido(cont) {
     const banco = jugadores(lado).filter((j) => !enPista.has(String(j.dorsal)));
     const hayTitularSel = app.seleccion?.lado === lado && !app.seleccion.coach && jugadorEnPista(lado, app.seleccion.dorsal);
     return h("div", { class: "suplentes" },
+      pistaIncompleta(lado),
       h("div", { class: "sup-cab" },
         h("h4", { text: "Suplentes" }),
         h("span", { class: "sub", text: hayTitularSel ? "Toca uno para cambiar" : "Toca uno para acciones" })),
+      h("div", { class: "sup-herr" },
+        h("button", { type: "button", class: "btn pequeno", title: "Varios cambios a la vez", onclick: () => abrirCambios(lado) }, "Cambios"),
+        h("button", { type: "button", class: "btn pequeno fantasma", title: "Añadir un jugador que no está en la lista", onclick: () => abrirNuevoJugador(lado) }, "+ Jugador")),
       banco.length
         ? banco.map((j) => bancoBoton(lado, j))
         : h("p", { class: "sub", text: "Todos en pista." }));
@@ -474,6 +512,70 @@ export function vistaPartido(cont) {
     },
       h("span", { class: "jb-dorsal", text: String(j.dorsal) }),
       h("span", { class: "jb-datos" }, h("b", { text: String(st.puntos) }), h("i", { text: String(st.faltas) })));
+  }
+
+  // Control de pista: deben estar 5 jugadores de cada equipo.
+  function pistaIncompleta(lado) {
+    const n = (app.proy?.oncourt[lado] || []).length;
+    if (n === 5) return null;
+    return h("div", { class: "aviso-pista", role: "alert" },
+      h("span", { text: `Hay ${n} en pista: deben ser 5.` }),
+      h("button", { type: "button", class: "btn pequeno primario", onclick: () => abrirCambios(lado) }, "Completar"));
+  }
+
+  // Varios cambios a la vez: se marca quién sale y quién entra y se registran juntos (un solo «Deshacer»).
+  function abrirCambios(lado) {
+    const enPista = (app.proy?.oncourt[lado] || []).map(String);
+    const banco = jugadores(lado).filter((j) => !enPista.includes(String(j.dorsal)));
+    const salen = new Set(), entran = new Set();
+    const cuerpo = h("div", { class: "cambios-dialogo" });
+    const excluido = (j) => jugadorExpulsado(stats(lado, j.dorsal)) || !!app.proy?.expulsadosBanquillo?.[lado]?.[`jugador:${j.dorsal}`];
+    const pintarCambios = () => {
+      limpiar(cuerpo);
+      const quedan = enPista.length - salen.size + entran.size;
+      const valido = entran.size > 0 && quedan === 5;
+      const col = (titulo, lista, set, bloquea) => h("div", { class: "cambios-col" }, h("h4", { text: titulo }),
+        lista.map((j) => h("button", {
+          type: "button", class: "jug-banco" + (set.has(String(j.dorsal)) ? " sel" : ""), disabled: bloquea?.(j) ? true : null,
+          onclick: () => { const k = String(j.dorsal); if (set.has(k)) set.delete(k); else set.add(k); pintarCambios(); },
+        }, h("span", { class: "jb-dorsal", text: String(j.dorsal) }), h("span", { class: "jb-nombre", text: nombreCorto(nombreJugador(j.nombre, j.dorsal)) }),
+          h("span", { class: "jb-datos" }, h("i", { text: `${stats(lado, j.dorsal).faltas} F` })))));
+      cuerpo.append(
+        h("div", { class: "cambios-cols" },
+          col("Sale (en pista)", enPista.map((d) => jugadores(lado).find((j) => j.dorsal === d)).filter(Boolean), salen),
+          col("Entra (banquillo)", banco, entran, excluido)),
+        h("p", { class: "sub", text: valido ? `Quedarán 5 en pista.` : `Quedarían ${quedan} en pista: deben ser 5.` }),
+        h("div", { class: "acciones" },
+          btn("Cancelar", () => dlg.close(), { clase: "btn" }),
+          btn(`Hacer ${entran.size} cambio${entran.size === 1 ? "" : "s"}`, async () => {
+            if (!valido) return;
+            const sa = [...salen], en = [...entran];
+            dlg.close();
+            await lote(async () => {
+              for (let i = 0; i < en.length; i++) await agregar("sustitucion", { lado, dorsal: sa[i] ?? undefined, datos: { sale: sa[i] ?? null, entra: en[i] } });
+            });
+            asistencia = null; pendiente = null; ubicacion = null; app.seleccion = null;
+            toast(`${en.length} cambio${en.length === 1 ? "" : "s"} en ${equipo(lado).nombre}. «Deshacer» los anula.`, "ok");
+            pintar();
+          }, { clase: "btn primario", disabled: valido ? null : true })));
+    };
+    const dlg = dialogo(`Cambios · ${equipo(lado).nombre}`, cuerpo, { ancho: "ancho" });
+    pintarCambios();
+  }
+
+  function abrirNuevoJugador(lado) {
+    const dorsal = h("input", { type: "text", inputmode: "numeric", maxlength: 3, placeholder: "Dorsal", "aria-label": "Dorsal" });
+    const nombre = h("input", { type: "text", placeholder: "Nombre (opcional)", "aria-label": "Nombre" });
+    const msg = h("p", { class: "sub" });
+    const guardar = async () => {
+      try { await anadirJugador(lado, dorsal.value, nombre.value); dlg.close(); toast(`Añadido #${dorsal.value.trim()} a ${equipo(lado).nombre}.`, "ok"); pintar(); }
+      catch (e) { msg.textContent = e.message; }
+    };
+    const dlg = dialogo(`Nuevo jugador · ${equipo(lado).nombre}`, h("div", { class: "nuevo-jugador" },
+      h("label", { class: "nota-campo" }, h("span", { text: "Dorsal" }), dorsal),
+      h("label", { class: "nota-campo" }, h("span", { text: "Nombre" }), nombre), msg,
+      h("div", { class: "acciones" }, btn("Cancelar", () => dlg.close(), { clase: "btn" }), btn("Añadir", guardar, { clase: "btn primario" }))));
+    setTimeout(() => dorsal.focus(), 60);
   }
 
   async function tocarBanco(lado, dorsal) {
@@ -656,10 +758,21 @@ export function vistaPartido(cont) {
         tiempoRestante: Math.round(relojActual()),
       },
     });
-    if (!s.coach) app.seleccion = null;
+    // En una serie de tiros libres el tirador sigue seleccionado; con 2/3 puntos se libera como siempre.
+    if (!s.coach && tipo !== 1) app.seleccion = null;
     if (resultado === "acierto" && tipo !== 1) asistencia = { lado: s.lado, tiroUid: ev.uid };
     else asistencia = null;
     if (resultado === "acierto" && tipo !== 1) await cambiarAtaque(otroLado(s.lado));
+    if (resultado === "fallo" && tipo !== 1) rebote = { ladoTirador: s.lado, tiroUid: ev.uid };
+    if (tipo === 1 && serieTL && serieTL.lado === s.lado && String(serieTL.dorsal) === String(s.dorsal)) {
+      serieTL.hechos += 1;
+      if (serieTL.hechos < serieTL.total) pendiente = nuevoPendienteTL(s.lado);
+      else {
+        serieTL = null;
+        if (resultado === "acierto") await cambiarAtaque(otroLado(s.lado)); // el último tiro libre anotado cede la posesión
+        else rebote = { ladoTirador: s.lado, tiroUid: ev.uid };
+      }
+    }
     pintar();
   }
 
@@ -822,6 +935,48 @@ export function vistaPartido(cont) {
       h("div", { class: "acciones" }, btn("Cancelar", () => d.close(), { clase: "btn" }))));
   }
 
+  const nuevoPendienteTL = (lado) => ({ tipo: 1, tl: true, xinv: null, yinv: null, basket: basketDe(lado) });
+
+  // Tiros libres que suele dar cada falta (art. 34-39 y 42): técnicas 1; disruptiva, flagrante y descalificante 2; personal 2 si hay bonus.
+  function abrirTiroslibres(ladoFalta, codigo) {
+    const rival = otroLado(ladoFalta);
+    const bonus = faltasCuarto(app.proy, ladoFalta) >= 5;
+    const sugerido = codigo === "P" ? (bonus ? 2 : 0) : ["DI", "FL", "D"].includes(codigo) ? 2 : 1;
+    const nota = codigo === "P"
+      ? (bonus ? "El equipo está en bonus: 2 tiros libres si no era acción de tiro." : "Sin bonus: saque, salvo que fuera una acción de tiro (2 o 3 tiros libres; solo 1 si el tiro entró).")
+      : "Los tiros libres de esta falta se lanzan de inmediato.";
+    const d = dialogo("Tiros libres", h("div", { class: "tl-dialogo" },
+      h("p", { class: "sub", text: `Falta ${codigo} de ${equipo(ladoFalta).nombre}. ¿Cuántos tiros libres lanza ${equipo(rival).nombre}?` }),
+      h("p", { class: "sub", text: nota }),
+      h("div", { class: "tl-opciones" }, [0, 1, 2, 3].map((n) => h("button", {
+        type: "button", class: "btn " + (n === sugerido ? "primario" : ""),
+        onclick: () => { d.close(); if (n > 0) elegirTirador(rival, n, codigo); },
+      }, n === 0 ? "Sin tiros" : `${n} TL`)))));
+  }
+
+  function elegirTirador(rival, n, codigo) {
+    const enPista = (app.proy?.oncourt[rival] || []).filter((dd) => !jugadorExpulsado(stats(rival, dd)));
+    const d = dialogo("¿Quién tira?", h("div", { class: "tl-dialogo" },
+      h("p", { class: "sub", text: `${n} tiro${n > 1 ? "s" : ""} libre${n > 1 ? "s" : ""} para ${equipo(rival).nombre}. Elige al que los lanza (quien recibió la falta).` }),
+      h("div", { class: "chips-asistencia" }, enPista.map((dd) => {
+        const j = jugadores(rival).find((x) => x.dorsal === String(dd));
+        const nombre = nombreJugador(j?.nombre, dd);
+        return h("button", { type: "button", class: "chip-asistencia", onclick: () => { d.close(); empezarSerie(rival, String(dd), n, codigo); } }, nombre ? `#${dd} ${nombreCorto(nombre)}` : `#${dd}`);
+      })),
+      h("div", { class: "acciones" }, btn("Cancelar", () => d.close(), { clase: "btn" }))));
+  }
+
+  async function empezarSerie(lado, dorsal, total, codigo) {
+    // Si la falta fue con contacto, el tirador es quien la recibió: se anota como falta recibida.
+    if (["P", "DI", "FL", "D"].includes(codigo)) await agregar("falta", { lado, dorsal, datos: { clase: "recibida", tipo: null } });
+    app.seleccion = { lado, dorsal };
+    serieTL = { lado, dorsal, total, hechos: 0, codigo };
+    pendiente = nuevoPendienteTL(lado);
+    ubicacion = null;
+    asistencia = null;
+    pintar();
+  }
+
   async function aplicarFalta(s, enPista, codigo) {
     const quien = s.coach ? nombreSel() : etiquetaJugador(nombreSel(), s.dorsal);
     if (enPista) {
@@ -843,6 +998,8 @@ export function vistaPartido(cont) {
     }
     toast(`Falta registrada: ${quien} (${codigo}).`, "ok");
     pintar();
+    const ladoFalta = s.lado;
+    setTimeout(() => abrirTiroslibres(ladoFalta, codigo), 80); // tras cerrarse el cuadro de la falta
   }
 
   async function accionSimple(tipo, nombre, datos = {}) {
@@ -884,17 +1041,12 @@ export function vistaPartido(cont) {
     const sale = s.dorsal;
     const saleJ = jugadores(lado).find((j) => j.dorsal === String(sale));
     const entraJ = jugadores(lado).find((j) => j.dorsal === String(entra));
-    const ok = await confirmar(
-      "Confirmar cambio",
-      `Cambio en ${equipo(lado).nombre}: sale ${etiquetaJugador(saleJ?.nombre, sale)} y entra ${etiquetaJugador(entraJ?.nombre, entra)}. ¿Confirmas el cambio?`,
-      { ok: "Hacer cambio" },
-    );
-    if (!ok) return;
     asistencia = null;
     pendiente = null;
     ubicacion = null;
     await agregar("sustitucion", { lado, dorsal: sale, datos: { sale, entra: String(entra) } });
     app.seleccion = { lado, dorsal: String(entra) };
+    toast(`Cambio en ${equipo(lado).nombre}: sale ${etiquetaJugador(saleJ?.nombre, sale)}, entra ${etiquetaJugador(entraJ?.nombre, entra)}. «Deshacer» lo anula.`, "ok");
     pintar();
   }
 

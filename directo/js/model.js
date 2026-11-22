@@ -150,7 +150,12 @@ export function proyectar(sesion, eventos, { relojActual } = {}) {
         break;
       case "sustitucion": {
         const sale = e.datos?.sale, entra = e.datos?.entra;
-        if (lado && sale != null && entra != null) {
+        const pista = lado ? est.oncourt[lado] : [];
+        if (lado && sale == null && entra != null && pista.length < 5 && !pista.includes(String(entra))) {
+          // Entrada sin salida: completa una pista con menos de 5 (titulares sin marcar).
+          est.oncourt[lado] = [...pista, String(entra)];
+          est.onSince[lado][String(entra)] = { cuarto: e.cuarto ?? est.cuarto, tipoPeriodo: e.tipoPeriodo ?? est.tipoPeriodo, reloj };
+        } else if (lado && sale != null && entra != null && pista.includes(String(sale)) && !pista.includes(String(entra))) {
           cerrarMinutos(est, lado, String(sale), e.cuarto ?? est.cuarto, e.tipoPeriodo ?? est.tipoPeriodo, reloj);
           est.oncourt[lado] = est.oncourt[lado].map((d) => (d === String(sale) ? String(entra) : d));
           est.onSince[lado][String(entra)] = { cuarto: e.cuarto ?? est.cuarto, tipoPeriodo: e.tipoPeriodo ?? est.tipoPeriodo, reloj };
