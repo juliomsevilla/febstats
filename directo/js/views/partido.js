@@ -2,7 +2,7 @@
 import { h, limpiar, btn, toast, dialogo, confirmar, mmss, jornadaTexto, nombreJugador, etiquetaJugador } from "../util.js";
 import {
   app, suscribir, agregar, deshacer, lote, anadirJugador, iniciarReloj, pararReloj, ajustarReloj, relojActual,
-  iniciarPeriodo, finPeriodo, finalizar, hacerCopia, estadoCopia, siguientePeriodo, cambiarAtaque,
+  iniciarPeriodo, finPeriodo, finalizar, saltoInicial, definirFlecha, usarFlecha, hacerCopia, estadoCopia, siguientePeriodo, cambiarAtaque,
   etiquetaPeriodo, equipoDefensor, defensaIndicada, marcarDefensa, editarEvento, eliminarEvento,
 } from "../estado.js";
 import { crearCancha, C } from "../court.js";
@@ -181,6 +181,7 @@ export function vistaPartido(cont) {
         h("div", { class: "reloj-periodo" },
           h("span", { class: "pill", text: etiquetaPeriodo(app.sesion.reloj) }),
           app.sesion.estado === "descanso" ? h("span", { class: "pill aviso", text: "Descanso" }) : null),
+        pillFlecha(),
         h("button", {
           type: "button", class: "reloj-digital " + (app.sesion.reloj.corriendo ? "corriendo" : ""),
           onclick: alternarReloj, "aria-label": app.sesion.reloj.corriendo ? "Parar reloj" : "Iniciar reloj",
@@ -188,6 +189,36 @@ export function vistaPartido(cont) {
           h("b", { "data-reloj": "principal", text: mmss(relojActual()) }),
           h("span", { class: "reloj-sub", text: app.sesion.reloj.corriendo ? "EN MARCHA" : "PARADO" }))),
       bloqueEquipo("visitante"));
+  }
+
+  // Flecha de posesión alterna (art. 12): indica a qué equipo le toca el próximo saque tras un balón disputado.
+  function pillFlecha() {
+    const f = app.proy?.flecha;
+    const txt = !f ? "Flecha: salto inicial" : f === "local" ? `◀ ${nombreCorto(equipo("local").nombre)}` : `${nombreCorto(equipo("visitante").nombre)} ▶`;
+    return h("button", {
+      type: "button", class: "pill flecha-pill" + (f ? "" : " aviso"), onclick: abrirFlecha,
+      title: f ? `La flecha favorece a ${equipo(f).nombre}. Toca para usarla o corregirla.` : "Aún no se ha jugado el salto inicial: toca para indicar quién lo ganó.",
+      "aria-label": f ? `Flecha de posesión a favor de ${equipo(f).nombre}` : "Flecha de posesión sin definir",
+    }, txt);
+  }
+
+  function abrirFlecha() {
+    const f = app.proy?.flecha;
+    const cerrar = () => d.close();
+    const eq = (lado) => equipo(lado).nombre;
+    const cuerpo = !f
+      ? h("div", { class: "flecha-dialogo" },
+        h("p", { class: "sub", text: "El equipo que NO gana el salto tendrá la primera posesión alterna (art. 12.6.2). ¿Quién ganó el salto?" }),
+        h("div", { class: "tl-opciones dos" },
+          ["local", "visitante"].map((l) => h("button", { type: "button", class: "btn primario", onclick: async () => { cerrar(); await saltoInicial(l); toast(`Salto para ${eq(l)}. La flecha favorece a ${eq(l === "local" ? "visitante" : "local")}.`, "ok"); pintar(); } }, eq(l)))),
+        h("div", { class: "acciones" }, btn("Más tarde", cerrar, { clase: "btn" })))
+      : h("div", { class: "flecha-dialogo" },
+        h("p", { class: "sub", text: `La flecha favorece a ${eq(f)}. Úsala en un balón retenido, un balón fuera con dudas, un balón encajado entre aro y tablero o una doble violación en el último tiro libre.` }),
+        h("button", { type: "button", class: "btn primario grande", onclick: async () => { cerrar(); await usarFlecha("disputa"); toast(`Posesión alterna: saca ${eq(f)}. La flecha pasa a ${eq(f === "local" ? "visitante" : "local")}.`, "ok"); pintar(); } }, `Usar la flecha: saca ${eq(f)}`),
+        h("div", { class: "tl-opciones dos" },
+          h("button", { type: "button", class: "btn", onclick: async () => { cerrar(); await definirFlecha(f === "local" ? "visitante" : "local"); toast("Flecha corregida.", "ok"); pintar(); } }, `Corregir: la tiene ${eq(f === "local" ? "visitante" : "local")}`),
+          h("button", { type: "button", class: "btn fantasma", onclick: cerrar }, "Cerrar")));
+    const d = dialogo("Flecha de posesión", cuerpo);
   }
 
   function bloqueEquipo(lado) {
@@ -226,6 +257,7 @@ export function vistaPartido(cont) {
       btn("Boxscore", () => navegar("boxscore"), { clase: "btn pequeno control", icon: "boxscore", title: "Ver el boxscore del partido" }),
       btn("Nota", abrirNuevaNota, { clase: "btn pequeno control", icon: "notas", title: "Crear una nota vinculada a este partido" }),
       btn("Acciones", abrirAcciones, { clase: "btn pequeno control", title: "Ver, editar o eliminar las acciones registradas" }),
+      btn("Flecha", abrirFlecha, { clase: "btn pequeno control", title: "Posesión alterna: usar o corregir la flecha" }),
       btn("Lados", cambiarLados, { clase: "btn pequeno control", icon: "cambiar", title: "Intercambiar los lados de los equipos" }),
       botonCopia());
   }
@@ -642,6 +674,8 @@ export function vistaPartido(cont) {
         h("button", { type: "button", class: "btn fantasma mini peligro-txt", title: "Eliminar acción", "aria-label": "Eliminar acción", onclick: () => borrarEvento(e) }, "✕")));
   }
 
+  const equipoNombreLado = (lado) => (lado ? equipo(lado).nombre : "—");
+
   function resumenEvento(e) {
     const quien = e.jugador || e.equipo || "Equipo";
     const d = e.datos || {};
@@ -649,6 +683,8 @@ export function vistaPartido(cont) {
       case "tiro": return `${quien} · ${d.tl ? "TL" : `${d.puntos}PT`} ${d.resultado === "acierto" ? "anotado" : "fallado"}`;
       case "rebote": return `${quien} · rebote ${d.tipo === "of" ? "ofensivo" : "defensivo"}`;
       case "asistencia": return `${quien} · asistencia`;
+      case "flecha": return `Flecha a favor de ${equipoNombreLado(e.lado)}`;
+      case "alterna": return `Posesión alterna: saca ${equipoNombreLado(e.lado)}`;
       case "robo": return `${quien} · robo`;
       case "perdida": return `${quien} · pérdida`;
       case "tapon": return `${quien} · tapón`;

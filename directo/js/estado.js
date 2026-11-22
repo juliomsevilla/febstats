@@ -320,7 +320,37 @@ export async function iniciarPeriodo(cuarto, tipoPeriodo = "regular", { silencio
   // En cada cuarto nuevo se vuelve a preguntar qué equipo defiende cada zona.
   if (s.defensas) delete s.defensas[cuarto];
   await agregar("periodo", { datos: { accion: "inicio", cuarto, tipoPeriodo, duracion: dur, silencioso } });
-  if (posesion) await agregar("posesion", { lado: app.ladoAtaque });
+  if (posesion) {
+    // Cada cuarto o prórroga después del primero empieza con saque del equipo que tiene la flecha (art. 12.6.3).
+    if (cuarto >= 2 && app.proy?.flecha) await usarFlecha("inicio_periodo");
+    else await agregar("posesion", { lado: app.ladoAtaque });
+  }
+}
+
+/** Salto inicial: gana el balón `ganador` y la flecha queda a favor del otro. */
+export async function saltoInicial(ganador) {
+  await lote(async () => {
+    await agregar("flecha", { lado: ganador === "local" ? "visitante" : "local", datos: { motivo: "salto_inicial" } });
+    await cambiarAtaque(ganador);
+  });
+}
+
+/** Fija o corrige a mano a quién favorece la flecha. */
+export async function definirFlecha(lado) {
+  await agregar("flecha", { lado, datos: { motivo: "manual" } });
+}
+
+/** Posesión alterna: saca el equipo de la flecha, que se invierte al instante. Devuelve el equipo que saca. */
+export async function usarFlecha(motivo = "disputa") {
+  const lado = app.proy?.flecha;
+  if (lado !== "local" && lado !== "visitante") return null;
+  await lote(async () => {
+    await agregar("alterna", { lado, datos: { motivo } });
+    app.ladoAtaque = lado;
+    app.sesion.ladoAtaque = lado;
+    await agregar("posesion", { lado });
+  });
+  return lado;
 }
 
 export async function finPeriodo({ descanso = false } = {}) {

@@ -49,6 +49,7 @@ function crearEstado(sesion, relojInicial) {
     },
     expulsadosBanquillo: { local: {}, visitante: {} },
     ultimoTiro: null, ultimaJugada: null, posesionAbierta: null, numeroPosesion: 0, cambios: [],
+    flecha: null, // equipo con derecho a la próxima posesión alterna (art. 12)
   };
 }
 
@@ -270,6 +271,12 @@ export function proyectar(sesion, eventos, { relojActual } = {}) {
         }
         break;
       }
+      case "flecha": // se fija o corrige a mano
+        if (e.lado === "local" || e.lado === "visitante") est.flecha = e.lado;
+        break;
+      case "alterna": // el equipo de la flecha saca y la flecha pasa al rival (art. 12.6.4)
+        if (e.lado === "local" || e.lado === "visitante") est.flecha = e.lado === "local" ? "visitante" : "local";
+        break;
       case "posesion":
         abrirPosesion(est, e);
         break;
