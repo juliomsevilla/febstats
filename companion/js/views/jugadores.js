@@ -220,7 +220,7 @@ export function fichaJugador(j) {
       h("div", null, h("h2", { text: "Zonas de tiro", style: { fontSize: "15px", marginBottom: "10px" } }), tiros.length ? mapaCancha({ tiros, modo: "zonas", tamano: "mini" }).el : vacioMsg("Sin tiros registrados")),
       h("div", null, h("h2", { text: "Partido a partido", style: { fontSize: "15px", marginBottom: "10px" } }),
         tabla({ cols: [T("f", "Fecha", { val: (r) => r.p?.fecha || "", render: (r) => fechaCorta(r.p?.fecha) }), T("rival", "Rival", { val: (r) => (r.p ? (r.p.equipo_local === j.equipo ? r.p.equipo_visitante : r.p.equipo_local) : "") }),
-          T("minutos", "Min", { num: true }), T("puntos", "Pts", { num: true }), T("reb_tot", "Reb", { num: true }), T("asistencias", "Ast", { num: true }), T("valoracion", "Val", { num: true })],
+          T("minutos", "Min", { num: true }), T("puntos", "Pts", { num: true }), T("reb_tot", "Reb", { num: true }), T("asistencias", "Ast", { num: true }), T("faltas_cometidas", "Fal", { num: true, render: (r) => (r.faltas_cometidas >= 5 ? h("span", { class: "fal-excl", title: "5 faltas: excluido" }, `${r.faltas_cometidas} · excl.`) : String(r.faltas_cometidas ?? "—")) }), T("valoracion", "Val", { num: true })],
           filas: log, orden: { col: "f", dir: 1 }, onOrden: () => {} }))),
     h("div", null, h("button", { type: "button", class: "btn primario", onclick: () => { document.getElementById("dlg").close(); ir({ view: "tiros", f: { ju: key } }); } }, "Ver su mapa de tiros completo")));
   dialogo(j.jugador, cuerpo, `${j.equipo} · #${j.dorsal ?? "?"}${j.perfil ? " · " + j.perfil : ""}`);

@@ -2,6 +2,7 @@
 import { h, f0, tabla, vacioMsg, dialogo, fechaCorta, fpct } from "../util.js";
 import { S, ir, equipoEnFoco } from "../state.js";
 import { conVideo, invoke } from "../api.js";
+import { AYUDA } from "../ayuda.js";
 
 export function vistaPartidos(root, f) {
   const foco = equipoEnFoco(f);
@@ -45,12 +46,13 @@ const COLS = [
   { key: "tl", label: "TL", num: true, val: (r) => r.tl_intentos, render: (r) => `${r.tl_aciertos}/${r.tl_intentos}` },
   { key: "reb_tot", label: "Reb", num: true }, { key: "asistencias", label: "Ast", num: true },
   { key: "recuperaciones", label: "Rob", num: true }, { key: "perdidas", label: "Per", num: true },
+  { key: "faltas_cometidas", label: "Fal", num: true, title: AYUDA.fal, render: (r) => (r.faltas_cometidas >= 5 ? h("span", { class: "fal-excl", title: "5 faltas: excluido (art. 41 FIBA)" }, `${r.faltas_cometidas} · excl.`) : String(r.faltas_cometidas ?? "—")) },
   { key: "valoracion", label: "Val", num: true }, { key: "mas_menos", label: "+/-", num: true },
 ];
 
 function boxscore(p) {
   const bloque = (eq, pts) => h("div", null, h("h2", { text: `${eq} · ${pts}`, style: { fontSize: "15px", marginBottom: "8px" } }),
-    tabla({ cols: COLS, filas: S.data.partidosJugador.filter((r) => r.partido_id === p.partido_id && r.equipo === eq), orden: { col: "puntos", dir: -1 }, onOrden: () => {}, vacioTxt: "Sin boxscore" }));
+    tabla({ cols: COLS, filas: S.data.partidosJugador.filter((r) => r.partido_id === p.partido_id && r.equipo === eq), orden: { col: "puntos", dir: -1 }, onOrden: () => {}, claseFila: (r) => (r.faltas_cometidas >= 5 ? "fila-excl" : ""), vacioTxt: "Sin boxscore" }));
   const cuerpo = h("div", { style: { display: "grid", gap: "20px" } }, bloque(p.equipo_local, p.pts_local), bloque(p.equipo_visitante, p.pts_visitante),
     h("div", null, h("button", { type: "button", class: "btn primario", onclick: () => { document.getElementById("dlg").close(); ir({ view: "tiros", f: { pa: p.partido_id } }); } }, "Ver mapa de tiros de este partido")));
   dialogo(`${p.equipo_local} – ${p.equipo_visitante}`, cuerpo, fechaCorta(p.fecha));

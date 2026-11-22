@@ -9,6 +9,9 @@ const COL = { suelo: "#fbf9f4", linea: "#7b7364", pintura: "#efe7d4", of: "#2a5f
 const NS = "http://www.w3.org/2000/svg";
 const KY0 = C.W / 2 - C.KW / 2, KY1 = C.W / 2 + C.KW / 2;
 const CORNER_X = C.HX + Math.sqrt(C.R3 ** 2 - (C.ESQ - C.HY) ** 2);
+// Puestos de rebote en tiros libres (art. 2.5.3, diagrama 3): distancias a la línea de fondo. El texto del reglamento no las da;
+// son las del diagrama habitual (primer puesto a 1,75 m, luego 0,85 / 0,40 / 1,00 / 1,00 m). Orientativo: confirmar con el diagrama oficial.
+const MARCAS_REBOTE = [1.75, 2.6, 3.0, 4.0, 5.0];
 let _id = 0;
 
 const pv = (p) => [p[1] + M, p[0] + M];                       // metros de pista [x, y] → coordenadas del SVG [horizontal, vertical]
@@ -26,6 +29,7 @@ function lineasMedia(mirror) {
       f([[0, KY0], [C.KD, KY0], [C.KD, KY1], [0, KY1]]),
       f(arco(C.KD, C.W / 2, C.FT, -Math.PI / 2, Math.PI / 2)),
       f([[0, C.ESQ], [CORNER_X, C.ESQ]]), f([[0, C.W - C.ESQ], [CORNER_X, C.W - C.ESQ]]), f(arco(C.HX, C.HY, C.R3, a0, a1, 90)),
+      ...MARCAS_REBOTE.flatMap((x) => [f([[x, KY0], [x, KY0 - 0.1]]), f([[x, KY1], [x, KY1 + 0.1]])]), // marcas de los puestos de rebote en tiros libres
       f([[1.2, C.HY - C.RA], ...arco(C.HX, C.HY, C.RA, -Math.PI / 2, Math.PI / 2, 24), [1.2, C.HY + C.RA]]),
       f(arco(C.L, C.W / 2, C.FT, Math.PI / 2, (3 * Math.PI) / 2)),
       f([[1.2, C.HY - 0.9], [1.2, C.HY + 0.9]]),
@@ -51,6 +55,15 @@ export function pistaGrupo(completa) {
   if (completa) {
     g.append(s("path", { d: ruta([[C.L, 0], [C.L, C.W]]), fill: "none", stroke: COL.linea, "stroke-width": 0.07 }));
     g.append(s("path", { d: ruta(arco(C.L, C.W / 2, C.FT, 0, 2 * Math.PI, 48)), fill: "none", stroke: COL.linea, "stroke-width": 0.07 })); // círculo central r = 1,80 m
+  }
+  // mesa de anotadores y áreas de banquillo (esquemático, fuera de pista, junto a la línea de banda; ver art. 2.5.5 y 2.6)
+  if (completa) {
+    const caja = (x0, x1, txt, disc) => {
+      g.append(s("path", { d: ruta([[x0, -0.8], [x1, -0.8], [x1, -0.35], [x0, -0.35]]) + "Z", fill: "none", stroke: COL.linea, "stroke-width": 0.05, ...(disc ? { "stroke-dasharray": "0.2 0.15" } : {}) }));
+      const [cx, cy] = pv([(x0 + x1) / 2, -0.575]);
+      g.append(s("text", { x: cx, y: cy, "font-size": 0.3, fill: COL.linea, "text-anchor": "middle", "dominant-baseline": "central" }, txt));
+    };
+    caja(12, 16, "Mesa", false); caja(6.5, 11.5, "Banquillo", true); caja(16.5, 21.5, "Banquillo", true);
   }
   // líneas de saque (art. 2.5.6): 0,15 m, fuera de pista, a 8,325 m de cada línea de fondo
   for (const x of completa ? [8.325, 2 * C.L - 8.325] : [8.325]) for (const [y0, y1] of [[-0.15, 0], [C.W, C.W + 0.15]]) {

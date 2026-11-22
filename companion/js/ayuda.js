@@ -6,6 +6,7 @@ export const AYUDA = {
   dif: "Diferencia de puntos (PF − PC). Positivo = anota más de lo que recibe",
   pf_prom: "Puntos a favor por partido jugado", pc_prom: "Puntos en contra por partido jugado",
   gini: "Concentración de anotación (Gini): 0 % = todos los jugadores anotan lo mismo; cuanto más alto, más depende el equipo de pocos anotadores",
+  fal: "Faltas personales cometidas en el partido. Con 5 el jugador queda excluido (art. 41 FIBA) y se marca «excl.»",
   dorsal: "Dorsal (número de camiseta)", partidos: "Partidos jugados",
   minutos_total: "Minutos jugados en la temporada", minutos: "Minutos jugados en el partido",
   puntos: "Puntos anotados", puntos_prom: "Puntos por partido jugado",

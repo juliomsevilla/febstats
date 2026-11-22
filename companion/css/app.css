@@ -575,3 +575,7 @@ main.ancho { max-width: none; padding: 10px 14px; }
 .ia-conf { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding-top: 8px; } .ia-conf select, .ia-conf input { height: 30px; max-width: 100%; border: 1px solid var(--borde); border-radius: 8px; background: var(--panel-2); padding: 0 8px; } .ia-conf-ayuda { color: var(--suave); margin-left: auto; }
 .ia-conf + .ia-input { padding-top: 6px; }
 .ia-conf select, .ia-conf input { width: auto; flex: none; } .ia-conf select:first-child { min-width: 130px; }
+
+/* Jugador con 5 faltas: excluido (art. 41 FIBA) */
+.tabla tr.fila-excl td { background: color-mix(in srgb, var(--mal) 10%, transparent); }
+.fal-excl { color: var(--mal); font-weight: 700; }
