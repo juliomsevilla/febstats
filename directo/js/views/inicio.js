@@ -1,6 +1,6 @@
 // Inicio: importar el paquete de datos, grupos, partidos en directo y finalizados.
 import { h, limpiar, btn, icono, toast, dialogo, confirmar, fechaCorta, jornadaTexto, mmss, guardarArchivo } from "../util.js";
-import { app, cargarTodo, abrirGrupo, guardarGrupoEnIDB, cargarSesion, borrarSesion, exportarSesionActual, nombreArchivoExport, etiquetaPeriodo, crearGrupoSinDatos } from "../estado.js";
+import { app, cargarTodo, abrirGrupo, guardarGrupoEnIDB, cargarSesion, borrarSesion, hacerCopia, estadoCopia, etiquetaPeriodo, crearGrupoSinDatos } from "../estado.js";
 import { normalizarPaquete, crearGrupoDesdePayload } from "../grupo.js";
 import { sembrarNotasPaquete } from "../notas-modelo.js";
 import { idb } from "../idb.js";
@@ -46,28 +46,28 @@ function botonImportar(cont) {
 }
 
 function botonExportar(cont) {
-  const finalizados = app.sesiones.filter((s) => s.estado === "final");
-  return btn("Exportar .db", () => abrirExportar(cont), {
+  const hay = app.sesiones.length > 0;
+  return btn("Copia de seguridad .db", () => abrirExportar(cont), {
     clase: "btn",
     icon: "exportar",
-    disabled: !finalizados.length,
-    title: finalizados.length ? "Exportar un partido finalizado" : "No hay partidos finalizados",
+    disabled: !hay,
+    title: hay ? "Guardar una copia de un partido, terminado o en curso" : "No hay partidos",
   });
 }
 
 function abrirExportar(cont) {
-  const finalizados = app.sesiones.filter((s) => s.estado === "final");
-  if (!finalizados.length) { toast("No hay partidos finalizados para exportar.", "aviso"); return; }
-  const d = dialogo("Exportar .db", h("div", { class: "exportar-lista" },
-    h("p", { class: "sub", text: "Solo se exportan partidos finalizados. Elige cuál quieres guardar." }),
-    finalizados.map((s) => {
+  if (!app.sesiones.length) { toast("No hay partidos para copiar.", "aviso"); return; }
+  const d = dialogo("Copia de seguridad", h("div", { class: "exportar-lista" },
+    h("p", { class: "sub", text: "Guarda el partido en Archivos o por AirDrop. Sirve para un partido en curso y para uno terminado; el Mac lo incorpora con Datos → Importar." }),
+    app.sesiones.map((s) => {
       const r = s.resumen || {};
+      const c = estadoCopia(s);
       return h("button", {
         type: "button", class: "exportar-fila",
         onclick: async () => { d.close(); await exportarPartido(s, cont); },
       },
         h("span", { class: "ef-eq", text: `${s.local.nombre} ${r.ptsLocal ?? 0}–${r.ptsVisitante ?? 0} ${s.visitante.nombre}` }),
-        h("span", { class: "sub", text: [s.competicion, s.fecha ? fechaCorta(s.fecha) : ""].filter(Boolean).join(" · ") || "Partido finalizado" }));
+        h("span", { class: "sub", text: [s.estado === "final" ? "Finalizado" : "En curso", s.competicion, s.fecha ? fechaCorta(s.fecha) : "", c.hay ? `última copia hace ${c.minutos} min` : "sin copia"].filter(Boolean).join(" · ") }));
     })));
 }
 
@@ -75,12 +75,11 @@ async function exportarPartido(s, cont) {
   const previa = app.sesion?.id || null;
   try {
     if (app.sesion?.id !== s.id) await cargarSesion(s.id);
-    const bytes = await exportarSesionActual();
-    const modo = await guardarArchivo(new Blob([bytes], { type: "application/vnd.sqlite3" }), nombreArchivoExport(s));
-    toast(modo === "compartido" ? "Elige «Guardar en Archivos»." : "Exportado: busca el .db en Archivos o en Descargas.", "ok");
+    const modo = await hacerCopia();
+    if (modo !== "cancelado") toast(modo === "compartido" ? "Elige «Guardar en Archivos»." : "Copia hecha: busca el .db en Archivos o en Descargas.", "ok");
   } catch (e) {
     console.error(e);
-    toast("No se pudo exportar: " + e.message, "error");
+    toast("No se pudo guardar la copia: " + e.message, "error");
   } finally {
     if (previa && previa !== s.id) {
       try { await cargarSesion(previa); } catch { /* sesión anterior ya no existe */ }

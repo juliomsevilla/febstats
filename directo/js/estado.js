@@ -7,7 +7,7 @@ import { aplicarEsquema } from "./schema.js";
 import { APP_VERSION, DURACION, resumenGrupo } from "./grupo.js";
 import { sembrarNotasDesdeGrupo, notaDeSesion, tituloDeNota } from "./notas-modelo.js";
 import { proyectar, relojAhora } from "./model.js";
-import { uid, selloLocal } from "./util.js";
+import { uid, selloLocal, guardarArchivo } from "./util.js";
 
 export { relojAhora };
 
@@ -461,6 +461,29 @@ export async function exportarSesionActual() {
   // Persiste el grupo con el snapshot (los datos importados + directo_* de esta sesión).
   await guardarGrupoEnIDB(app.sesion.grupoId, db, metaGrupoActual(), "");
   return bytes;
+}
+
+/** Copia de seguridad del partido (en curso o terminado): exporta el .db y lo guarda en Archivos / AirDrop. */
+export async function hacerCopia() {
+  const s = app.sesion;
+  if (!s) throw new Error("No hay partido abierto.");
+  const bytes = await exportarSesionActual();
+  const modo = await guardarArchivo(new Blob([bytes], { type: "application/vnd.sqlite3" }), nombreArchivoExport(s));
+  if (modo !== "cancelado") {
+    s.ultimaCopia = { ts: Date.now(), n: s.ultimoN };
+    await guardarSesion();
+    avisar();
+  }
+  return modo;
+}
+
+/** ¿Cuánto hace de la última copia? `vieja` avisa cuando ya hay bastante trabajo sin respaldar. */
+export function estadoCopia(s = app.sesion) {
+  const c = s?.ultimaCopia;
+  const eventos = (Number(s?.ultimoN) || 0) - (c?.n || 0);
+  const minutos = c ? Math.floor((Date.now() - c.ts) / 60000) : null;
+  const vieja = eventos >= 40 || (c ? minutos >= 20 && eventos > 0 : eventos >= 20);
+  return { hay: !!c, minutos, eventos, vieja };
 }
 
 export function nombreArchivoExport(sesion = app.sesion) {

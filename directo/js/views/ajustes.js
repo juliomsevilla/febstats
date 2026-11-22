@@ -27,7 +27,7 @@ export function vistaAjustes(cont) {
             h("div", null, h("dt", { text: "Cuota" }), h("dd", { text: p.cuota ? `${(p.cuota / 1048576).toFixed(0)} MB` : "—" })),
             h("div", null, h("dt", { text: "Grupos" }), h("dd", { text: String(app.grupos.length) })),
             h("div", null, h("dt", { text: "Sesiones" }), h("dd", { text: String(app.sesiones.length) }))),
-          h("p", { class: "sub", text: "iOS puede liberar almacenamiento si no usas la app durante semanas. Instálala en la pantalla de inicio y exporta el .db de cada partido finalizado desde Inicio." }),
+          h("p", { class: "sub", text: "iOS puede liberar almacenamiento si no usas la app durante semanas. Instálala en la pantalla de inicio y guarda copias del .db: el botón «Copia» del partido en curso (se pone ámbar cuando hay mucho sin respaldar) o «Copia de seguridad .db» en Inicio." }),
           h("div", { class: "acciones" },
             btn("Volver a pedir persistencia", async () => { app.persistencia = await pedirPersistencia(); toast(app.persistencia.persistido ? "Persistencia concedida." : "El sistema no la ha concedido.", app.persistencia.persistido ? "ok" : "aviso"); pintar(); }, { clase: "btn" }),
             btn("Ver estado del esquema", diagnostico, { clase: "btn" }))),

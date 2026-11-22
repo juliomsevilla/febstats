@@ -2,7 +2,7 @@
 import { h, limpiar, btn, toast, dialogo, confirmar, mmss, jornadaTexto, nombreJugador, etiquetaJugador } from "../util.js";
 import {
   app, suscribir, agregar, deshacer, lote, anadirJugador, iniciarReloj, pararReloj, ajustarReloj, relojActual,
-  iniciarPeriodo, finPeriodo, finalizar, siguientePeriodo, cambiarAtaque,
+  iniciarPeriodo, finPeriodo, finalizar, hacerCopia, estadoCopia, siguientePeriodo, cambiarAtaque,
   etiquetaPeriodo, equipoDefensor, defensaIndicada, marcarDefensa, editarEvento, eliminarEvento,
 } from "../estado.js";
 import { crearCancha, C } from "../court.js";
@@ -226,7 +226,25 @@ export function vistaPartido(cont) {
       btn("Boxscore", () => navegar("boxscore"), { clase: "btn pequeno control", icon: "boxscore", title: "Ver el boxscore del partido" }),
       btn("Nota", abrirNuevaNota, { clase: "btn pequeno control", icon: "notas", title: "Crear una nota vinculada a este partido" }),
       btn("Acciones", abrirAcciones, { clase: "btn pequeno control", title: "Ver, editar o eliminar las acciones registradas" }),
-      btn("Lados", cambiarLados, { clase: "btn pequeno control", icon: "cambiar", title: "Intercambiar los lados de los equipos" }));
+      btn("Lados", cambiarLados, { clase: "btn pequeno control", icon: "cambiar", title: "Intercambiar los lados de los equipos" }),
+      botonCopia());
+  }
+
+  // Copia de seguridad: guarda el .db del partido (también en curso). Se marca en ámbar cuando hay mucho trabajo sin respaldar.
+  function botonCopia() {
+    const c = estadoCopia();
+    return btn(c.vieja ? "Copia ⚠" : "Copia", guardarCopia, {
+      clase: "btn pequeno control" + (c.vieja ? " aviso" : ""), icon: "exportar",
+      title: c.hay ? `Última copia hace ${c.minutos} min (${c.eventos} acciones después)` : "Aún no hay copia de este partido: guarda una",
+    });
+  }
+
+  async function guardarCopia() {
+    try {
+      const modo = await hacerCopia();
+      if (modo !== "cancelado") toast(modo === "compartido" ? "Elige «Guardar en Archivos»." : "Copia hecha: busca el .db en Archivos o en Descargas.", "ok");
+    } catch (e) { toast("No se pudo guardar la copia: " + e.message, "error"); }
+    pintar();
   }
 
   // ---------------- centro: pista y acciones ----------------
@@ -670,6 +688,7 @@ export function vistaPartido(cont) {
         h("div", { class: "fm-eq der", style: estiloLado("visitante") },
           h("b", { text: String(p.pts.visitante) }), h("span", { text: s.visitante.nombre }))),
       h("div", { class: "acciones centradas" },
+        btn("Guardar copia", guardarCopia, { clase: "btn primario", icon: "exportar", title: "Guarda el .db del partido para llevarlo al Mac" }),
         btn("Boxscore", () => navegar("boxscore"), { clase: "btn pequeno", icon: "boxscore" }),
         btn("Volver al inicio", () => navegar("inicio"), { clase: "btn pequeno", icon: "inicio" })),
       accionesRegistradas(true));
@@ -1196,6 +1215,8 @@ export function vistaPartido(cont) {
   async function cerrarCuarto() {
     await finPeriodo();
     toast("Cuarto cerrado. Elige «Siguiente cuarto» cuando toque.", "ok");
+    // El descanso es un buen momento para respaldar el partido.
+    if (estadoCopia().vieja && await confirmar("¿Guardar una copia?", "Hay bastante trabajo sin respaldar. Aprovecha el descanso para guardar una copia del partido en Archivos o por AirDrop.", { ok: "Guardar copia" })) await guardarCopia();
   }
 
   async function cambiarLados() {
