@@ -49,6 +49,7 @@ function crearEstado(sesion, relojInicial) {
     },
     expulsadosBanquillo: { local: {}, visitante: {} },
     ultimoTiro: null, ultimaJugada: null, posesionAbierta: null, numeroPosesion: 0, cambios: [],
+    flecha: null, // equipo con derecho a la próxima posesión alterna (art. 12)
   };
 }
 
@@ -150,7 +151,12 @@ export function proyectar(sesion, eventos, { relojActual } = {}) {
         break;
       case "sustitucion": {
         const sale = e.datos?.sale, entra = e.datos?.entra;
-        if (lado && sale != null && entra != null) {
+        const pista = lado ? est.oncourt[lado] : [];
+        if (lado && sale == null && entra != null && pista.length < 5 && !pista.includes(String(entra))) {
+          // Entrada sin salida: completa una pista con menos de 5 (titulares sin marcar).
+          est.oncourt[lado] = [...pista, String(entra)];
+          est.onSince[lado][String(entra)] = { cuarto: e.cuarto ?? est.cuarto, tipoPeriodo: e.tipoPeriodo ?? est.tipoPeriodo, reloj };
+        } else if (lado && sale != null && entra != null && pista.includes(String(sale)) && !pista.includes(String(entra))) {
           cerrarMinutos(est, lado, String(sale), e.cuarto ?? est.cuarto, e.tipoPeriodo ?? est.tipoPeriodo, reloj);
           est.oncourt[lado] = est.oncourt[lado].map((d) => (d === String(sale) ? String(entra) : d));
           est.onSince[lado][String(entra)] = { cuarto: e.cuarto ?? est.cuarto, tipoPeriodo: e.tipoPeriodo ?? est.tipoPeriodo, reloj };
@@ -265,6 +271,12 @@ export function proyectar(sesion, eventos, { relojActual } = {}) {
         }
         break;
       }
+      case "flecha": // se fija o corrige a mano
+        if (e.lado === "local" || e.lado === "visitante") est.flecha = e.lado;
+        break;
+      case "alterna": // el equipo de la flecha saca y la flecha pasa al rival (art. 12.6.4)
+        if (e.lado === "local" || e.lado === "visitante") est.flecha = e.lado === "local" ? "visitante" : "local";
+        break;
       case "posesion":
         abrirPosesion(est, e);
         break;

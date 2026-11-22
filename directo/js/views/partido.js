@@ -1,13 +1,13 @@
 // Pantalla de partido en directo: marcador, controles, pista y acciones laterales.
 import { h, limpiar, btn, toast, dialogo, confirmar, mmss, jornadaTexto, nombreJugador, etiquetaJugador } from "../util.js";
 import {
-  app, suscribir, agregar, deshacer, iniciarReloj, pararReloj, ajustarReloj, relojActual,
-  iniciarPeriodo, finPeriodo, finalizar, siguientePeriodo, cambiarAtaque,
+  app, suscribir, agregar, deshacer, lote, anadirJugador, iniciarReloj, pararReloj, ajustarReloj, relojActual,
+  iniciarPeriodo, finPeriodo, finalizar, saltoInicial, definirFlecha, usarFlecha, hacerCopia, estadoCopia, siguientePeriodo, cambiarAtaque,
   etiquetaPeriodo, equipoDefensor, defensaIndicada, marcarDefensa, editarEvento, eliminarEvento,
 } from "../estado.js";
 import { crearCancha, C } from "../court.js";
 import { faltasCuarto } from "../model.js";
-import { statsVacias } from "../grupo.js";
+import { statsVacias, puntosDeTiro } from "../grupo.js";
 import { abrirEditorNota } from "../notas-editor.js";
 import { navegar } from "../app.js";
 
@@ -20,6 +20,8 @@ const ACCIONES = [
   ["A", "Asistencia", "Asistencia", (fn) => fn("asistencia")],
   ["R", "Robo", "Recuperación / robo", (fn) => fn("robo")],
   ["P", "Pérdida", "Pérdida", (fn) => fn("perdida")],
+  ["TP", "Tapón", "Tapón (bloqueo) a un tiro rival", (fn) => fn("tapon")],
+  ["FR", "F. recib.", "Falta recibida (el jugador es objeto de falta)", (fn) => fn("falta_recibida")],
 ];
 
 export function vistaPartido(cont) {
@@ -35,6 +37,8 @@ export function vistaPartido(cont) {
   let ubicacion = null;              // { xinv, yinv, basket } al tocar la pista
   let pendiente = null;              // { tipo: 1|2|3, tl, xinv, yinv, basket }
   let asistencia = null;             // { lado, tiroUid }
+  let serieTL = null;                // { lado, dorsal, total, hechos, codigo }: serie de tiros libres tras una falta
+  let rebote = null;                 // { ladoTirador, tiroUid }: rebote pendiente tras un tiro fallado
   let verTodos = false;
   let pidiendoDefensa = false;
 
@@ -177,6 +181,7 @@ export function vistaPartido(cont) {
         h("div", { class: "reloj-periodo" },
           h("span", { class: "pill", text: etiquetaPeriodo(app.sesion.reloj) }),
           app.sesion.estado === "descanso" ? h("span", { class: "pill aviso", text: "Descanso" }) : null),
+        pillFlecha(),
         h("button", {
           type: "button", class: "reloj-digital " + (app.sesion.reloj.corriendo ? "corriendo" : ""),
           onclick: alternarReloj, "aria-label": app.sesion.reloj.corriendo ? "Parar reloj" : "Iniciar reloj",
@@ -186,11 +191,42 @@ export function vistaPartido(cont) {
       bloqueEquipo("visitante"));
   }
 
+  // Flecha de posesión alterna (art. 12): indica a qué equipo le toca el próximo saque tras un balón disputado.
+  function pillFlecha() {
+    const f = app.proy?.flecha;
+    const txt = !f ? "Flecha: salto inicial" : f === "local" ? `◀ ${nombreCorto(equipo("local").nombre)}` : `${nombreCorto(equipo("visitante").nombre)} ▶`;
+    return h("button", {
+      type: "button", class: "pill flecha-pill" + (f ? "" : " aviso"), onclick: abrirFlecha,
+      title: f ? `La flecha favorece a ${equipo(f).nombre}. Toca para usarla o corregirla.` : "Aún no se ha jugado el salto inicial: toca para indicar quién lo ganó.",
+      "aria-label": f ? `Flecha de posesión a favor de ${equipo(f).nombre}` : "Flecha de posesión sin definir",
+    }, txt);
+  }
+
+  function abrirFlecha() {
+    const f = app.proy?.flecha;
+    const cerrar = () => d.close();
+    const eq = (lado) => equipo(lado).nombre;
+    const cuerpo = !f
+      ? h("div", { class: "flecha-dialogo" },
+        h("p", { class: "sub", text: "El equipo que NO gana el salto tendrá la primera posesión alterna (art. 12.6.2). ¿Quién ganó el salto?" }),
+        h("div", { class: "tl-opciones dos" },
+          ["local", "visitante"].map((l) => h("button", { type: "button", class: "btn primario", onclick: async () => { cerrar(); await saltoInicial(l); toast(`Salto para ${eq(l)}. La flecha favorece a ${eq(l === "local" ? "visitante" : "local")}.`, "ok"); pintar(); } }, eq(l)))),
+        h("div", { class: "acciones" }, btn("Más tarde", cerrar, { clase: "btn" })))
+      : h("div", { class: "flecha-dialogo" },
+        h("p", { class: "sub", text: `La flecha favorece a ${eq(f)}. Úsala en un balón retenido, un balón fuera con dudas, un balón encajado entre aro y tablero o una doble violación en el último tiro libre.` }),
+        h("button", { type: "button", class: "btn primario grande", onclick: async () => { cerrar(); await usarFlecha("disputa"); toast(`Posesión alterna: saca ${eq(f)}. La flecha pasa a ${eq(f === "local" ? "visitante" : "local")}.`, "ok"); pintar(); } }, `Usar la flecha: saca ${eq(f)}`),
+        h("div", { class: "tl-opciones dos" },
+          h("button", { type: "button", class: "btn", onclick: async () => { cerrar(); await definirFlecha(f === "local" ? "visitante" : "local"); toast("Flecha corregida.", "ok"); pintar(); } }, `Corregir: la tiene ${eq(f === "local" ? "visitante" : "local")}`),
+          h("button", { type: "button", class: "btn fantasma", onclick: cerrar }, "Cerrar")));
+    const d = dialogo("Flecha de posesión", cuerpo);
+  }
+
   function bloqueEquipo(lado) {
     const faltas = faltasCuarto(app.proy, lado);
     // El equipo entra en situación de penalización al llegar a 4 faltas de equipo.
     const bonus = faltas >= 4;
-    const tm = app.proy?.tiemposMuertos?.[lado] || 0;
+    const tmInfo = tmTramo(lado);
+    const tmQuedan = Math.max(0, tmInfo.limite - tmInfo.usados.length);
     return h("div", { class: "marcador-eq " + lado, style: estiloLado(lado) },
       h("div", { class: "meq-nombre" },
         h("span", { class: "meq-color" }),
@@ -202,7 +238,7 @@ export function vistaPartido(cont) {
         h("button", {
           type: "button", class: "tm-btn", title: "Anotar tiempo muerto",
           onclick: () => anotarTiempoMuerto(lado),
-        }, h("span", { text: "TM" }), h("b", { text: String(tm) }))));
+        }, h("span", { text: "TM" }), h("b", { text: String(tmQuedan) }), h("span", { class: "tm-queda", text: "quedan" }))));
   }
 
   function esUltimoCuarto() { return app.sesion.reloj.cuarto >= 4; }
@@ -215,13 +251,32 @@ export function vistaPartido(cont) {
       btn("+1", () => ajustarReloj(1), { clase: "btn pequeno control", title: "Sumar 1 segundo" }),
       btn("+10", () => ajustarReloj(10), { clase: "btn pequeno control", title: "Sumar 10 segundos" }),
       btn(s.reloj.corriendo ? "Parar" : "Iniciar", alternarReloj, { clase: "btn pequeno control " + (s.reloj.corriendo ? "aviso" : "primario"), icon: s.reloj.corriendo ? "pausa" : "play" }),
-      btn("Deshacer", async () => { const ok = await deshacer(); toast(ok ? "Última acción anulada." : "No hay nada que deshacer.", ok ? "ok" : "aviso"); }, { clase: "btn pequeno control", icon: "deshacer" }),
+      btn("Deshacer", async () => { const ev = await deshacer(); toast(ev ? `Anulado: ${resumenEvento(ev)}` : "No hay nada que deshacer.", ev ? "ok" : "aviso"); }, { clase: "btn pequeno control", icon: "deshacer" }),
       btn("Fin cuarto", cerrarCuarto, { clase: "btn pequeno control" }),
       btn("Siguiente", siguiente, { clase: "btn pequeno control primario", title: esUltimoCuarto() ? "Siguiente cuarto, prórroga o final" : "Siguiente cuarto" }),
       btn("Boxscore", () => navegar("boxscore"), { clase: "btn pequeno control", icon: "boxscore", title: "Ver el boxscore del partido" }),
       btn("Nota", abrirNuevaNota, { clase: "btn pequeno control", icon: "notas", title: "Crear una nota vinculada a este partido" }),
       btn("Acciones", abrirAcciones, { clase: "btn pequeno control", title: "Ver, editar o eliminar las acciones registradas" }),
-      btn("Lados", cambiarLados, { clase: "btn pequeno control", icon: "cambiar", title: "Intercambiar los lados de los equipos" }));
+      btn("Flecha", abrirFlecha, { clase: "btn pequeno control", title: "Posesión alterna: usar o corregir la flecha" }),
+      btn("Lados", cambiarLados, { clase: "btn pequeno control", icon: "cambiar", title: "Intercambiar los lados de los equipos" }),
+      botonCopia());
+  }
+
+  // Copia de seguridad: guarda el .db del partido (también en curso). Se marca en ámbar cuando hay mucho trabajo sin respaldar.
+  function botonCopia() {
+    const c = estadoCopia();
+    return btn(c.vieja ? "Copia ⚠" : "Copia", guardarCopia, {
+      clase: "btn pequeno control" + (c.vieja ? " aviso" : ""), icon: "exportar",
+      title: c.hay ? `Última copia hace ${c.minutos} min (${c.eventos} acciones después)` : "Aún no hay copia de este partido: guarda una",
+    });
+  }
+
+  async function guardarCopia() {
+    try {
+      const modo = await hacerCopia();
+      if (modo !== "cancelado") toast(modo === "compartido" ? "Elige «Guardar en Archivos»." : "Copia hecha: busca el .db en Archivos o en Descargas.", "ok");
+    } catch (e) { toast("No se pudo guardar la copia: " + e.message, "error"); }
+    pintar();
   }
 
   // ---------------- centro: pista y acciones ----------------
@@ -230,6 +285,7 @@ export function vistaPartido(cont) {
     return h("section", { class: "pista-central" },
       barraTiros(),
       asistencia ? tiraAsistencia() : null,
+      rebote ? tiraRebote() : null,
       canchaWrap(),
       piePista(),
       accionesFila());
@@ -311,7 +367,7 @@ export function vistaPartido(cont) {
 
   function tarjetaTiroFlotante() {
     const p = pendiente;
-    const tipo = p.tl ? "Tiro libre" : p.tipo === 3 ? "Triple" : "2 puntos";
+    const tipo = p.tl ? (serieTL ? `Tiro libre ${serieTL.hechos + 1} de ${serieTL.total}` : "Tiro libre") : p.tipo === 3 ? "Triple" : "2 puntos";
     const dorsal = app.seleccion?.dorsal ?? "";
     const nombre = nombreJugador(nombreSel(), dorsal);
     const etiqueta = nombre ? `#${dorsal} ${nombreCorto(nombre)}` : `#${dorsal}`;
@@ -328,7 +384,38 @@ export function vistaPartido(cont) {
       h("div", { class: "ttf-acciones" },
         h("button", { type: "button", class: "btn anota", onclick: () => registrarTiro("acierto") }, "ANOTA"),
         h("button", { type: "button", class: "btn falla", onclick: () => registrarTiro("fallo") }, "FALLA"),
-        h("button", { type: "button", class: "btn fantasma", onclick: () => { pendiente = null; ubicacion = null; pintar(); } }, "Cancelar")));
+        h("button", { type: "button", class: "btn fantasma", onclick: () => { pendiente = null; ubicacion = null; serieTL = null; pintar(); } }, serieTL ? "Dejar la serie" : "Cancelar")));
+  }
+
+  // Tras un tiro fallado (o el último tiro libre fallado) se pregunta quién se lleva el rebote.
+  function tiraRebote() {
+    const grupo = (lado) => {
+      const enPista = app.proy?.oncourt[lado] || [];
+      return h("div", { class: "rebote-eq", style: estiloLado(lado) },
+        h("b", { text: equipo(lado).nombre }),
+        enPista.map((d) => {
+          const j = jugadores(lado).find((x) => x.dorsal === String(d));
+          const nombre = nombreJugador(j?.nombre, d);
+          return h("button", { type: "button", class: "chip-asistencia", onclick: () => elegirRebote(lado, d) }, nombre ? `#${d} ${nombreCorto(nombre)}` : `#${d}`);
+        }),
+        h("button", { type: "button", class: "chip-asistencia", onclick: () => elegirRebote(lado, null) }, "Equipo"));
+    };
+    return h("div", { class: "tira-asistencia tira-rebote" },
+      h("div", { class: "tt-cab" }, h("b", { text: "¿Rebote?" }), h("span", { class: "sub", text: "Toca quién lo coge, «Equipo» si no hay un jugador claro, o «Nadie» si sale fuera" })),
+      grupo(rebote.ladoTirador), grupo(otroLado(rebote.ladoTirador)),
+      h("button", { type: "button", class: "btn fantasma", onclick: () => { rebote = null; pintar(); } }, "Nadie"));
+  }
+
+  async function elegirRebote(lado, dorsal) {
+    const r = rebote;
+    rebote = null;
+    if (!r) return;
+    const tipo = lado === r.ladoTirador ? "of" : "def";
+    await lote(async () => {
+      await agregar("rebote", { lado, dorsal: dorsal == null ? undefined : String(dorsal), datos: { tipo, equipo: dorsal == null } });
+      if (tipo === "def") await cambiarAtaque(lado);
+    });
+    pintar();
   }
 
   function tiraAsistencia() {
@@ -369,6 +456,8 @@ export function vistaPartido(cont) {
             if (accion === "asistencia") return accionAsistencia();
             if (accion === "robo") return accionRobo();
             if (accion === "perdida") return accionPerdida();
+            if (accion === "tapon") return accionSimple("tapon", "Tapón");
+            if (accion === "falta_recibida") return accionSimple("falta", "Falta recibida", { clase: "recibida", tipo: null });
           });
         },
       },
@@ -421,9 +510,13 @@ export function vistaPartido(cont) {
     const banco = jugadores(lado).filter((j) => !enPista.has(String(j.dorsal)));
     const hayTitularSel = app.seleccion?.lado === lado && !app.seleccion.coach && jugadorEnPista(lado, app.seleccion.dorsal);
     return h("div", { class: "suplentes" },
+      pistaIncompleta(lado),
       h("div", { class: "sup-cab" },
         h("h4", { text: "Suplentes" }),
         h("span", { class: "sub", text: hayTitularSel ? "Toca uno para cambiar" : "Toca uno para acciones" })),
+      h("div", { class: "sup-herr" },
+        h("button", { type: "button", class: "btn pequeno", title: "Varios cambios a la vez", onclick: () => abrirCambios(lado) }, "Cambios"),
+        h("button", { type: "button", class: "btn pequeno fantasma", title: "Añadir un jugador que no está en la lista", onclick: () => abrirNuevoJugador(lado) }, "+ Jugador")),
       banco.length
         ? banco.map((j) => bancoBoton(lado, j))
         : h("p", { class: "sub", text: "Todos en pista." }));
@@ -469,6 +562,70 @@ export function vistaPartido(cont) {
     },
       h("span", { class: "jb-dorsal", text: String(j.dorsal) }),
       h("span", { class: "jb-datos" }, h("b", { text: String(st.puntos) }), h("i", { text: String(st.faltas) })));
+  }
+
+  // Control de pista: deben estar 5 jugadores de cada equipo.
+  function pistaIncompleta(lado) {
+    const n = (app.proy?.oncourt[lado] || []).length;
+    if (n === 5) return null;
+    return h("div", { class: "aviso-pista", role: "alert" },
+      h("span", { text: `Hay ${n} en pista: deben ser 5.` }),
+      h("button", { type: "button", class: "btn pequeno primario", onclick: () => abrirCambios(lado) }, "Completar"));
+  }
+
+  // Varios cambios a la vez: se marca quién sale y quién entra y se registran juntos (un solo «Deshacer»).
+  function abrirCambios(lado) {
+    const enPista = (app.proy?.oncourt[lado] || []).map(String);
+    const banco = jugadores(lado).filter((j) => !enPista.includes(String(j.dorsal)));
+    const salen = new Set(), entran = new Set();
+    const cuerpo = h("div", { class: "cambios-dialogo" });
+    const excluido = (j) => jugadorExpulsado(stats(lado, j.dorsal)) || !!app.proy?.expulsadosBanquillo?.[lado]?.[`jugador:${j.dorsal}`];
+    const pintarCambios = () => {
+      limpiar(cuerpo);
+      const quedan = enPista.length - salen.size + entran.size;
+      const valido = entran.size > 0 && quedan === 5;
+      const col = (titulo, lista, set, bloquea) => h("div", { class: "cambios-col" }, h("h4", { text: titulo }),
+        lista.map((j) => h("button", {
+          type: "button", class: "jug-banco" + (set.has(String(j.dorsal)) ? " sel" : ""), disabled: bloquea?.(j) ? true : null,
+          onclick: () => { const k = String(j.dorsal); if (set.has(k)) set.delete(k); else set.add(k); pintarCambios(); },
+        }, h("span", { class: "jb-dorsal", text: String(j.dorsal) }), h("span", { class: "jb-nombre", text: nombreCorto(nombreJugador(j.nombre, j.dorsal)) }),
+          h("span", { class: "jb-datos" }, h("i", { text: `${stats(lado, j.dorsal).faltas} F` })))));
+      cuerpo.append(
+        h("div", { class: "cambios-cols" },
+          col("Sale (en pista)", enPista.map((d) => jugadores(lado).find((j) => j.dorsal === d)).filter(Boolean), salen),
+          col("Entra (banquillo)", banco, entran, excluido)),
+        h("p", { class: "sub", text: valido ? `Quedarán 5 en pista.` : `Quedarían ${quedan} en pista: deben ser 5.` }),
+        h("div", { class: "acciones" },
+          btn("Cancelar", () => dlg.close(), { clase: "btn" }),
+          btn(`Hacer ${entran.size} cambio${entran.size === 1 ? "" : "s"}`, async () => {
+            if (!valido) return;
+            const sa = [...salen], en = [...entran];
+            dlg.close();
+            await lote(async () => {
+              for (let i = 0; i < en.length; i++) await agregar("sustitucion", { lado, dorsal: sa[i] ?? undefined, datos: { sale: sa[i] ?? null, entra: en[i] } });
+            });
+            asistencia = null; pendiente = null; ubicacion = null; app.seleccion = null;
+            toast(`${en.length} cambio${en.length === 1 ? "" : "s"} en ${equipo(lado).nombre}. «Deshacer» los anula.`, "ok");
+            pintar();
+          }, { clase: "btn primario", disabled: valido ? null : true })));
+    };
+    const dlg = dialogo(`Cambios · ${equipo(lado).nombre}`, cuerpo, { ancho: "ancho" });
+    pintarCambios();
+  }
+
+  function abrirNuevoJugador(lado) {
+    const dorsal = h("input", { type: "text", inputmode: "numeric", maxlength: 3, placeholder: "Dorsal", "aria-label": "Dorsal" });
+    const nombre = h("input", { type: "text", placeholder: "Nombre (opcional)", "aria-label": "Nombre" });
+    const msg = h("p", { class: "sub" });
+    const guardar = async () => {
+      try { await anadirJugador(lado, dorsal.value, nombre.value); dlg.close(); toast(`Añadido #${dorsal.value.trim()} a ${equipo(lado).nombre}.`, "ok"); pintar(); }
+      catch (e) { msg.textContent = e.message; }
+    };
+    const dlg = dialogo(`Nuevo jugador · ${equipo(lado).nombre}`, h("div", { class: "nuevo-jugador" },
+      h("label", { class: "nota-campo" }, h("span", { text: "Dorsal" }), dorsal),
+      h("label", { class: "nota-campo" }, h("span", { text: "Nombre" }), nombre), msg,
+      h("div", { class: "acciones" }, btn("Cancelar", () => dlg.close(), { clase: "btn" }), btn("Añadir", guardar, { clase: "btn primario" }))));
+    setTimeout(() => dorsal.focus(), 60);
   }
 
   async function tocarBanco(lado, dorsal) {
@@ -517,6 +674,8 @@ export function vistaPartido(cont) {
         h("button", { type: "button", class: "btn fantasma mini peligro-txt", title: "Eliminar acción", "aria-label": "Eliminar acción", onclick: () => borrarEvento(e) }, "✕")));
   }
 
+  const equipoNombreLado = (lado) => (lado ? equipo(lado).nombre : "—");
+
   function resumenEvento(e) {
     const quien = e.jugador || e.equipo || "Equipo";
     const d = e.datos || {};
@@ -524,6 +683,8 @@ export function vistaPartido(cont) {
       case "tiro": return `${quien} · ${d.tl ? "TL" : `${d.puntos}PT`} ${d.resultado === "acierto" ? "anotado" : "fallado"}`;
       case "rebote": return `${quien} · rebote ${d.tipo === "of" ? "ofensivo" : "defensivo"}`;
       case "asistencia": return `${quien} · asistencia`;
+      case "flecha": return `Flecha a favor de ${equipoNombreLado(e.lado)}`;
+      case "alterna": return `Posesión alterna: saca ${equipoNombreLado(e.lado)}`;
       case "robo": return `${quien} · robo`;
       case "perdida": return `${quien} · pérdida`;
       case "tapon": return `${quien} · tapón`;
@@ -563,6 +724,7 @@ export function vistaPartido(cont) {
         h("div", { class: "fm-eq der", style: estiloLado("visitante") },
           h("b", { text: String(p.pts.visitante) }), h("span", { text: s.visitante.nombre }))),
       h("div", { class: "acciones centradas" },
+        btn("Guardar copia", guardarCopia, { clase: "btn primario", icon: "exportar", title: "Guarda el .db del partido para llevarlo al Mac" }),
         btn("Boxscore", () => navegar("boxscore"), { clase: "btn pequeno", icon: "boxscore" }),
         btn("Volver al inicio", () => navegar("inicio"), { clase: "btn pequeno", icon: "inicio" })),
       accionesRegistradas(true));
@@ -621,7 +783,8 @@ export function vistaPartido(cont) {
     pintar();
   }
 
-  async function registrarTiro(resultado) {
+  const registrarTiro = (resultado) => lote(() => registrarTiroInterno(resultado));
+  async function registrarTiroInterno(resultado) {
     const s = app.seleccion;
     const p = pendiente;
     if (!s || !p) return;
@@ -630,9 +793,16 @@ export function vistaPartido(cont) {
     }
     if (personaExpulsada(s)) { toast("Ese jugador está expulsado: no puede anotar más.", "aviso"); return; }
     const xinv = p.xinv, yinv = p.yinv;
-    const X = xinv == null ? null : (s.lado === "local" ? xinv : 28 - xinv);
-    const Y = yinv == null ? null : (s.lado === "local" ? yinv : 15 - yinv);
+    // X/Y son la posición real en pista; Xinv/Yinv, la misma plegada a media pista. Depende del aro atacado (cambia en el descanso), no del equipo.
+    const derecha = (p.basket || basketDe(s.lado)) === "right";
+    const X = xinv == null ? null : (derecha ? 28 - xinv : xinv);
+    const Y = yinv == null ? null : (derecha ? 15 - yinv : yinv);
     const tipo = p.tipo;
+    if (xinv != null && (tipo === 2 || tipo === 3) && puntosDeTiro(xinv, yinv) !== tipo) {
+      const real = puntosDeTiro(xinv, yinv);
+      const sigue = await confirmar("¿Seguro que es de " + tipo + "?", `El punto tocado está ${real === 3 ? "fuera" : "dentro"} de la línea de 3 puntos: sería un tiro de ${real}.`, { ok: `Registrar de ${tipo}`, });
+      if (!sigue) return;
+    }
     pendiente = null;
     ubicacion = null;
     const ev = await agregar("tiro", {
@@ -643,10 +813,21 @@ export function vistaPartido(cont) {
         tiempoRestante: Math.round(relojActual()),
       },
     });
-    if (!s.coach) app.seleccion = null;
+    // En una serie de tiros libres el tirador sigue seleccionado; con 2/3 puntos se libera como siempre.
+    if (!s.coach && tipo !== 1) app.seleccion = null;
     if (resultado === "acierto" && tipo !== 1) asistencia = { lado: s.lado, tiroUid: ev.uid };
     else asistencia = null;
     if (resultado === "acierto" && tipo !== 1) await cambiarAtaque(otroLado(s.lado));
+    if (resultado === "fallo" && tipo !== 1) rebote = { ladoTirador: s.lado, tiroUid: ev.uid };
+    if (tipo === 1 && serieTL && serieTL.lado === s.lado && String(serieTL.dorsal) === String(s.dorsal)) {
+      serieTL.hechos += 1;
+      if (serieTL.hechos < serieTL.total) pendiente = nuevoPendienteTL(s.lado);
+      else {
+        serieTL = null;
+        if (resultado === "acierto") await cambiarAtaque(otroLado(s.lado)); // el último tiro libre anotado cede la posesión
+        else rebote = { ladoTirador: s.lado, tiroUid: ev.uid };
+      }
+    }
     pintar();
   }
 
@@ -658,7 +839,8 @@ export function vistaPartido(cont) {
     pintar();
   }
 
-  async function accionRebote(tipo) {
+  const accionRebote = (tipo) => lote(() => accionReboteInterno(tipo));
+  async function accionReboteInterno(tipo) {
     const s = app.seleccion;
     if (!s) return;
     asistencia = null;
@@ -667,7 +849,8 @@ export function vistaPartido(cont) {
     pintar();
   }
 
-  async function accionRobo() {
+  const accionRobo = () => lote(() => accionRoboInterno());
+  async function accionRoboInterno() {
     const s = app.seleccion;
     if (!s) return;
     asistencia = null;
@@ -677,7 +860,8 @@ export function vistaPartido(cont) {
     pintar();
   }
 
-  async function accionPerdida() {
+  const accionPerdida = () => lote(() => accionPerdidaInterno());
+  async function accionPerdidaInterno() {
     const s = app.seleccion;
     if (!s) return;
     asistencia = null;
@@ -806,6 +990,48 @@ export function vistaPartido(cont) {
       h("div", { class: "acciones" }, btn("Cancelar", () => d.close(), { clase: "btn" }))));
   }
 
+  const nuevoPendienteTL = (lado) => ({ tipo: 1, tl: true, xinv: null, yinv: null, basket: basketDe(lado) });
+
+  // Tiros libres que suele dar cada falta (art. 34-39 y 42): técnicas 1; disruptiva, flagrante y descalificante 2; personal 2 si hay bonus.
+  function abrirTiroslibres(ladoFalta, codigo) {
+    const rival = otroLado(ladoFalta);
+    const bonus = faltasCuarto(app.proy, ladoFalta) >= 5;
+    const sugerido = codigo === "P" ? (bonus ? 2 : 0) : ["DI", "FL", "D"].includes(codigo) ? 2 : 1;
+    const nota = codigo === "P"
+      ? (bonus ? "El equipo está en bonus: 2 tiros libres si no era acción de tiro." : "Sin bonus: saque, salvo que fuera una acción de tiro (2 o 3 tiros libres; solo 1 si el tiro entró).")
+      : "Los tiros libres de esta falta se lanzan de inmediato.";
+    const d = dialogo("Tiros libres", h("div", { class: "tl-dialogo" },
+      h("p", { class: "sub", text: `Falta ${codigo} de ${equipo(ladoFalta).nombre}. ¿Cuántos tiros libres lanza ${equipo(rival).nombre}?` }),
+      h("p", { class: "sub", text: nota }),
+      h("div", { class: "tl-opciones" }, [0, 1, 2, 3].map((n) => h("button", {
+        type: "button", class: "btn " + (n === sugerido ? "primario" : ""),
+        onclick: () => { d.close(); if (n > 0) elegirTirador(rival, n, codigo); },
+      }, n === 0 ? "Sin tiros" : `${n} TL`)))));
+  }
+
+  function elegirTirador(rival, n, codigo) {
+    const enPista = (app.proy?.oncourt[rival] || []).filter((dd) => !jugadorExpulsado(stats(rival, dd)));
+    const d = dialogo("¿Quién tira?", h("div", { class: "tl-dialogo" },
+      h("p", { class: "sub", text: `${n} tiro${n > 1 ? "s" : ""} libre${n > 1 ? "s" : ""} para ${equipo(rival).nombre}. Elige al que los lanza (quien recibió la falta).` }),
+      h("div", { class: "chips-asistencia" }, enPista.map((dd) => {
+        const j = jugadores(rival).find((x) => x.dorsal === String(dd));
+        const nombre = nombreJugador(j?.nombre, dd);
+        return h("button", { type: "button", class: "chip-asistencia", onclick: () => { d.close(); empezarSerie(rival, String(dd), n, codigo); } }, nombre ? `#${dd} ${nombreCorto(nombre)}` : `#${dd}`);
+      })),
+      h("div", { class: "acciones" }, btn("Cancelar", () => d.close(), { clase: "btn" }))));
+  }
+
+  async function empezarSerie(lado, dorsal, total, codigo) {
+    // Si la falta fue con contacto, el tirador es quien la recibió: se anota como falta recibida.
+    if (["P", "DI", "FL", "D"].includes(codigo)) await agregar("falta", { lado, dorsal, datos: { clase: "recibida", tipo: null } });
+    app.seleccion = { lado, dorsal };
+    serieTL = { lado, dorsal, total, hechos: 0, codigo };
+    pendiente = nuevoPendienteTL(lado);
+    ubicacion = null;
+    asistencia = null;
+    pintar();
+  }
+
   async function aplicarFalta(s, enPista, codigo) {
     const quien = s.coach ? nombreSel() : etiquetaJugador(nombreSel(), s.dorsal);
     if (enPista) {
@@ -826,6 +1052,17 @@ export function vistaPartido(cont) {
       });
     }
     toast(`Falta registrada: ${quien} (${codigo}).`, "ok");
+    pintar();
+    const ladoFalta = s.lado;
+    setTimeout(() => abrirTiroslibres(ladoFalta, codigo), 80); // tras cerrarse el cuadro de la falta
+  }
+
+  async function accionSimple(tipo, nombre, datos = {}) {
+    const s = app.seleccion;
+    if (!s) return;
+    asistencia = null;
+    await eventoJugador(tipo, datos);
+    toast(`${nombre}: ${nombreSel()}.`, "ok");
     pintar();
   }
 
@@ -859,17 +1096,12 @@ export function vistaPartido(cont) {
     const sale = s.dorsal;
     const saleJ = jugadores(lado).find((j) => j.dorsal === String(sale));
     const entraJ = jugadores(lado).find((j) => j.dorsal === String(entra));
-    const ok = await confirmar(
-      "Confirmar cambio",
-      `Cambio en ${equipo(lado).nombre}: sale ${etiquetaJugador(saleJ?.nombre, sale)} y entra ${etiquetaJugador(entraJ?.nombre, entra)}. ¿Confirmas el cambio?`,
-      { ok: "Hacer cambio" },
-    );
-    if (!ok) return;
     asistencia = null;
     pendiente = null;
     ubicacion = null;
     await agregar("sustitucion", { lado, dorsal: sale, datos: { sale, entra: String(entra) } });
     app.seleccion = { lado, dorsal: String(entra) };
+    toast(`Cambio en ${equipo(lado).nombre}: sale ${etiquetaJugador(saleJ?.nombre, sale)}, entra ${etiquetaJugador(entraJ?.nombre, entra)}. «Deshacer» lo anula.`, "ok");
     pintar();
   }
 
@@ -1019,6 +1251,8 @@ export function vistaPartido(cont) {
   async function cerrarCuarto() {
     await finPeriodo();
     toast("Cuarto cerrado. Elige «Siguiente cuarto» cuando toque.", "ok");
+    // El descanso es un buen momento para respaldar el partido.
+    if (estadoCopia().vieja && await confirmar("¿Guardar una copia?", "Hay bastante trabajo sin respaldar. Aprovecha el descanso para guardar una copia del partido en Archivos o por AirDrop.", { ok: "Guardar copia" })) await guardarCopia();
   }
 
   async function cambiarLados() {
@@ -1031,10 +1265,28 @@ export function vistaPartido(cont) {
     pintar();
   }
 
+  // Tiempos muertos FIBA (art. 18): 2 en la 1.ª parte, 3 en la 2.ª (máx. 2 con 2:00 o menos en el 4.º) y 1 por prórroga.
+  const tramoTM = (cuarto) => (cuarto <= 2 ? "H1" : cuarto <= 4 ? "H2" : "P" + cuarto);
+  const limiteTM = (tramo) => (tramo === "H1" ? 2 : tramo === "H2" ? 3 : 1);
+  function tmTramo(lado) {
+    const tramo = tramoTM(app.sesion.reloj.cuarto);
+    const anul = new Set(app.eventos.filter((e) => e.t === "anulacion").map((e) => e.datos?.ref));
+    const usados = app.eventos.filter((e) => e.t === "tiempo_muerto" && e.lado === lado && !anul.has(e.uid) && tramoTM(e.cuarto) === tramo);
+    return { usados, tramo, limite: limiteTM(tramo) };
+  }
   async function anotarTiempoMuerto(lado) {
+    const { usados, tramo, limite } = tmTramo(lado);
+    if (usados.length >= limite) {
+      const ok = await confirmar("Sin tiempos muertos", `${equipo(lado).nombre} ya ha usado los ${limite} tiempos muertos ${tramo === "H1" ? "de la primera parte" : tramo === "H2" ? "de la segunda parte" : "de esta prórroga"}. ¿Anotar otro igualmente?`, { ok: "Anotar", peligro: true });
+      if (!ok) return;
+    } else if (tramo === "H2" && app.sesion.reloj.cuarto === 4 && relojActual() <= 120 && usados.filter((e) => e.cuarto === 4 && e.reloj <= 120).length >= 2) {
+      const ok = await confirmar("Límite en los últimos 2:00", "Solo se pueden pedir 2 tiempos muertos con 2:00 o menos en el 4.º cuarto. ¿Anotarlo igualmente?", { ok: "Anotar", peligro: true });
+      if (!ok) return;
+    }
     await agregar("tiempo_muerto", { lado });
-    const n = app.proy?.tiemposMuertos?.[lado] || 0;
-    toast(`Tiempo muerto de ${equipo(lado).nombre} (${n}).`, "ok");
+    await pararReloj();
+    const n = tmTramo(lado).usados.length;
+    toast(`Tiempo muerto de ${equipo(lado).nombre} (${n} de ${limite}).`, "ok");
     pintar();
   }
 

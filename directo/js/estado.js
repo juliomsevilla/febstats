@@ -7,7 +7,7 @@ import { aplicarEsquema } from "./schema.js";
 import { APP_VERSION, DURACION, resumenGrupo } from "./grupo.js";
 import { sembrarNotasDesdeGrupo, notaDeSesion, tituloDeNota } from "./notas-modelo.js";
 import { proyectar, relojAhora } from "./model.js";
-import { uid, selloLocal } from "./util.js";
+import { uid, selloLocal, guardarArchivo } from "./util.js";
 
 export { relojAhora };
 
@@ -190,6 +190,8 @@ export async function cargarSesion(id) {
   app.ladoAtaque = s.ladoAtaque || "local";
   app.seleccion = null;
   app.eventos = (await idb.porIndice("eventos", "sesion", id)).sort((a, b) => a.n - b.n);
+  // Si la app se cerró entre guardar el evento y la sesión, el contador pudo quedar atrás: se recupera del registro.
+  s.ultimoN = Math.max(Number(s.ultimoN) || 0, ...app.eventos.map((e) => Number(e.n) || 0));
   if (app.grupoId !== s.grupoId) { try { await abrirGrupo(s.grupoId); } catch (e) { app.errorGrupo = e.message; } }
   reproyectar();
   avisar();
@@ -217,6 +219,14 @@ export async function guardarSesion() {
   if (i >= 0) app.sesiones[i] = s; else app.sesiones.unshift(s);
 }
 
+let loteActivo = null;
+/** Agrupa los eventos que genera una sola acción del usuario (p. ej. robo + pérdida del rival + posesión) para anularlos juntos. */
+export async function lote(fn) {
+  if (loteActivo) return fn();
+  loteActivo = uid("lo");
+  try { return await fn(); } finally { loteActivo = null; }
+}
+
 /** Añade un evento al registro y reproyecta. */
 export async function agregar(t, payload = {}) {
   if (!app.sesion) throw new Error("No hay sesión abierta.");
@@ -235,6 +245,7 @@ export async function agregar(t, payload = {}) {
     dorsal: payload.dorsal != null ? String(payload.dorsal) : null,
     datos: payload.datos || {},
   };
+  if (payload.grupo || loteActivo) ev.grupo = payload.grupo || loteActivo;
   await idb.put("eventos", ev);
   app.eventos.push(ev);
   reproyectar();
@@ -249,11 +260,18 @@ function anulados() {
 
 export async function deshacer() {
   const anul = anulados();
+  // «reloj» y «posesión» sueltos no son una acción del usuario; los que van dentro de un lote se anulan con él.
   const saltar = new Set(["anulacion", "reloj", "posesion"]);
   const ultimo = [...app.eventos].reverse().find((e) => !saltar.has(e.t) && !anul.has(e.uid) && !e.soloLocal);
-  if (!ultimo) return false;
-  await agregar("anulacion", { uid: uid("anu"), datos: { ref: ultimo.uid, tipo: ultimo.t } });
-  return true;
+  if (!ultimo) return null;
+  const grupo = ultimo.grupo ? app.eventos.filter((e) => e.grupo === ultimo.grupo && !anul.has(e.uid) && e.t !== "anulacion") : [ultimo];
+  const lote = uid("lo");
+  for (const e of grupo.reverse()) await agregar("anulacion", { uid: uid("anu"), grupo: lote, datos: { ref: e.uid, tipo: e.t } });
+  // La flecha de ataque sigue al último evento de posesión que siga vigente.
+  const vivos = anulados();
+  const pos = [...app.eventos].reverse().find((e) => e.t === "posesion" && !vivos.has(e.uid));
+  if (pos?.lado) { app.ladoAtaque = pos.lado; await guardarSesion(); avisar(); }
+  return ultimo;
 }
 
 export async function borrarSesion(id) {
@@ -302,7 +320,37 @@ export async function iniciarPeriodo(cuarto, tipoPeriodo = "regular", { silencio
   // En cada cuarto nuevo se vuelve a preguntar qué equipo defiende cada zona.
   if (s.defensas) delete s.defensas[cuarto];
   await agregar("periodo", { datos: { accion: "inicio", cuarto, tipoPeriodo, duracion: dur, silencioso } });
-  if (posesion) await agregar("posesion", { lado: app.ladoAtaque });
+  if (posesion) {
+    // Cada cuarto o prórroga después del primero empieza con saque del equipo que tiene la flecha (art. 12.6.3).
+    if (cuarto >= 2 && app.proy?.flecha) await usarFlecha("inicio_periodo");
+    else await agregar("posesion", { lado: app.ladoAtaque });
+  }
+}
+
+/** Salto inicial: gana el balón `ganador` y la flecha queda a favor del otro. */
+export async function saltoInicial(ganador) {
+  await lote(async () => {
+    await agregar("flecha", { lado: ganador === "local" ? "visitante" : "local", datos: { motivo: "salto_inicial" } });
+    await cambiarAtaque(ganador);
+  });
+}
+
+/** Fija o corrige a mano a quién favorece la flecha. */
+export async function definirFlecha(lado) {
+  await agregar("flecha", { lado, datos: { motivo: "manual" } });
+}
+
+/** Posesión alterna: saca el equipo de la flecha, que se invierte al instante. Devuelve el equipo que saca. */
+export async function usarFlecha(motivo = "disputa") {
+  const lado = app.proy?.flecha;
+  if (lado !== "local" && lado !== "visitante") return null;
+  await lote(async () => {
+    await agregar("alterna", { lado, datos: { motivo } });
+    app.ladoAtaque = lado;
+    app.sesion.ladoAtaque = lado;
+    await agregar("posesion", { lado });
+  });
+  return lado;
 }
 
 export async function finPeriodo({ descanso = false } = {}) {
@@ -379,6 +427,13 @@ export async function editarEvento(uid, cambios = {}) {
   if (i < 0) return null;
   const previo = app.eventos[i];
   const ev = { ...previo, ...cambios, datos: { ...(previo.datos || {}), ...(cambios.datos || {}) } };
+  // Rastro de la edición: el registro conserva lo que había antes.
+  ev.ediciones = [...(previo.ediciones || []), { ts: Date.now(), antes: { lado: previo.lado, dorsal: previo.dorsal, datos: previo.datos } }].slice(-10);
+  if (ev.t === "tiro") {
+    ev.datos.tl = Number(ev.datos.puntos) === 1;
+    // Un tiro libre no tiene posición en pista: las coordenadas no pueden quedar de un tiro de campo anterior.
+    if (ev.datos.tl) { ev.datos.X = ev.datos.Y = ev.datos.Xinv = ev.datos.Yinv = null; }
+  }
   // Si cambia el lado o el dorsal, se recompone la identidad visible.
   if (ev.lado && app.sesion?.[ev.lado]) {
     ev.equipo = app.sesion[ev.lado].nombre;
@@ -395,6 +450,19 @@ export async function editarEvento(uid, cambios = {}) {
   await guardarSesion();
   avisar();
   return ev;
+}
+
+/** Añade a la plantilla de la sesión un jugador que no estaba (p. ej. un rival cuyo dorsal no se conocía). */
+export async function anadirJugador(lado, dorsal, nombre = "") {
+  const s = app.sesion;
+  if (!s) throw new Error("No hay sesión abierta.");
+  const d = String(dorsal ?? "").trim();
+  if (!d) throw new Error("Escribe el dorsal.");
+  if (s.jugadores[lado].some((j) => j.dorsal === d)) throw new Error(`El dorsal ${d} ya está en ${s[lado].nombre}.`);
+  s.jugadores[lado].push({ dorsal: d, nombre: String(nombre).trim() || `#${d}`, jugadorId: null, titular: false, orden: s.jugadores[lado].length });
+  await guardarSesion();
+  reproyectar();
+  avisar();
 }
 
 /** Elimina una acción concreta del registro (queda como anulada). */
@@ -423,6 +491,29 @@ export async function exportarSesionActual() {
   // Persiste el grupo con el snapshot (los datos importados + directo_* de esta sesión).
   await guardarGrupoEnIDB(app.sesion.grupoId, db, metaGrupoActual(), "");
   return bytes;
+}
+
+/** Copia de seguridad del partido (en curso o terminado): exporta el .db y lo guarda en Archivos / AirDrop. */
+export async function hacerCopia() {
+  const s = app.sesion;
+  if (!s) throw new Error("No hay partido abierto.");
+  const bytes = await exportarSesionActual();
+  const modo = await guardarArchivo(new Blob([bytes], { type: "application/vnd.sqlite3" }), nombreArchivoExport(s));
+  if (modo !== "cancelado") {
+    s.ultimaCopia = { ts: Date.now(), n: s.ultimoN };
+    await guardarSesion();
+    avisar();
+  }
+  return modo;
+}
+
+/** ¿Cuánto hace de la última copia? `vieja` avisa cuando ya hay bastante trabajo sin respaldar. */
+export function estadoCopia(s = app.sesion) {
+  const c = s?.ultimaCopia;
+  const eventos = (Number(s?.ultimoN) || 0) - (c?.n || 0);
+  const minutos = c ? Math.floor((Date.now() - c.ts) / 60000) : null;
+  const vieja = eventos >= 40 || (c ? minutos >= 20 && eventos > 0 : eventos >= 20);
+  return { hay: !!c, minutos, eventos, vieja };
 }
 
 export function nombreArchivoExport(sesion = app.sesion) {

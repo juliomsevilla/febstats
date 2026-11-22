@@ -1,5 +1,5 @@
 // Service worker: la app entera queda en caché para funcionar sin red en pista.
-const VERSION = "fd-2026-11-22-18";
+const VERSION = "fd-2026-11-22-22";
 const ASSETS = [
   "./", "index.html", "manifest.webmanifest", "css/app.css",
   "vendor/sql-wasm.js", "vendor/sql-wasm.wasm",
@@ -9,6 +9,9 @@ const ASSETS = [
   "js/views/notas.js", "js/views/ajustes.js",
   "icons/icon.svg", "icons/icon-192.png", "icons/icon-512.png", "icons/icon-maskable-512.png", "icons/apple-touch-icon.png",
 ];
+
+// En un pabellón con mala cobertura, la red no puede dejar la app esperando: a los 3 s se sirve lo que hay en caché.
+const conTiempo = (req, ms = 3000) => Promise.race([fetch(req, { cache: "reload" }), new Promise((_, no) => setTimeout(() => no(new Error("tiempo")), ms))]);
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(VERSION).then((c) => c.addAll(ASSETS.map((a) => new URL(a, self.registration.scope).href))).then(() => self.skipWaiting()));
@@ -30,12 +33,12 @@ self.addEventListener("fetch", (e) => {
   const indice = () => caches.match(new URL("index.html", self.registration.scope).href).then((r) => r || caches.match(new URL("./", self.registration.scope).href));
   if (req.mode === "navigate") {
     // Sin red (o con un 502 del proxy) se sirve el índice cacheado.
-    e.respondWith(fetch(req, { cache: "reload" }).then((r) => (r.ok ? r : indice())).catch(indice));
+    e.respondWith(conTiempo(req).then((r) => (r.ok ? r : indice())).catch(indice));
     return;
   }
   // Código y estilos: red primero (así una versión nueva se ve al abrir con Internet); sin red, caché.
   if (/\.(js|css|webmanifest)$/.test(url.pathname)) {
-    e.respondWith(fetch(req, { cache: "reload" }).then((resp) => {
+    e.respondWith(conTiempo(req).then((resp) => {
       if (resp.ok) { caches.open(VERSION).then((c) => c.put(req, resp.clone())); return resp; }
       return caches.match(req).then((c) => c || resp);
     }).catch(() => caches.match(req)));
