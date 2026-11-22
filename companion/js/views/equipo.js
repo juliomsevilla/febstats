@@ -2,6 +2,7 @@
 import { h, f0, f1, f2, fsigno, fpct, kpi, tabla, vacioMsg, minutos, fechaCorta, tabsBar, conAyuda } from "../util.js";
 import { S, ir, equipoEnFoco, partidosDeEquipo, nombreDeKey, equipoDeKey } from "../state.js";
 import { AYUDA } from "../ayuda.js";
+import { REGLAS } from "../reglas.js";
 import { lineChart } from "../charts/line.js";
 import { radar } from "../charts/radar.js";
 import { botonCSV, csvDatos, pngSvg, nombreArchivo } from "../export.js";
@@ -87,20 +88,21 @@ const LEAD = [
 ];
 const colNum = (key, label, fmt = f1) => ({ key, label, num: true, fmt, title: AYUDA[key] });
 const COLS_CL = {
-  general: [...LEAD, { key: "pg", label: "PG", num: true, title: AYUDA.pg }, { key: "pp", label: "PP", num: true, title: AYUDA.pp },
+  general: [...LEAD, { key: "ptos", label: "Pts", num: true, title: AYUDA.ptos }, { key: "pg", label: "PG", num: true, title: AYUDA.pg }, { key: "pp", label: "PP", num: true, title: AYUDA.pp },
     { key: "pf", label: "PF", num: true, title: AYUDA.pf }, { key: "pc", label: "PC", num: true, title: AYUDA.pc },
     { key: "dif", label: "+/-", num: true, title: AYUDA.dif, fmt: (v) => (v > 0 ? "+" : "") + v },
     colNum("pf_prom", "PF/PJ"), colNum("pc_prom", "PC/PJ"), colNum("gini_puntos", "Gini", fpct)],
   ataque: [...LEAD, colNum("pos", "Pos", f0), colNum("ritmo", "Ritmo"), colNum("ortg", "Ataque"), colNum("drtg", "Defensa"), colNum("neto", "Neto", fsigno)],
   tiro: [...LEAD, colNum("ppt2", "PPT2", f2), colNum("ppt3", "PPT3", f2), colNum("ppt", "PPT", f2), colNum("pct_t3", "% T3", fpct), colNum("ts_pct", "TS%", fpct)],
 };
-const TABS_CL = [["general", "General"], ["ataque", "Ataque y defensa"], ["tiro", "Tiro"], ["radar", "Radar"], ["info", "Qué significa"]];
+const TABS_CL = [["general", "General"], ["ataque", "Ataque y defensa"], ["tiro", "Tiro"], ["radar", "Radar"], ["info", "Qué significa"], ["reglas", "Reglas FIBA"]];
 
 function panelClasificacion(f, foco, rerender) {
   const D = S.data, card = h("div", { class: "card" });
   card.append(tabsBar(TABS_CL, V.tabCl, (v) => { V.tabCl = v; rerender(); }));
   if (V.tabCl === "radar") return card.append(panelRadar(foco, rerender)), card;
   if (V.tabCl === "info") return card.append(explicacionEquipo()), card;
+  if (V.tabCl === "reglas") return card.append(panelReglas()), card;
   const [clave, orden, nombre] = V.tabCl === "ataque" ? ["ordenAD", V.ordenAD, "ataque_defensa"] : V.tabCl === "tiro" ? ["ordenTiro", V.ordenTiro, "tiro"] : ["orden", V.orden, "clasificacion"];
   const cols = COLS_CL[V.tabCl];
   card.append(h("h2", { text: V.tabCl === "general" ? "Clasificación" : TABS_CL.find(([k]) => k === V.tabCl)[1] }, h("span", { class: "sub", text: "clic en un equipo para ver su detalle" }),
@@ -154,6 +156,12 @@ function panelRadar(foco, rerender) {
     { key: "a", label: A, num: true, fmt: null, render: celda("a") }, { key: "b", label: nomB, num: true, fmt: null, render: celda("b") }], filas, orden: { col: "eje", dir: 0 }, onOrden: () => {} }),
     h("p", { class: "nota-kpi", text: "En verde, el mejor valor de cada métrica." }));
   return cont;
+}
+
+function panelReglas() {
+  return h("div", { class: "explica" }, h("h2", { text: "Reglas FIBA 2026 que afectan a los datos" }),
+    ...REGLAS.flatMap((g) => [h("h3", { text: g.titulo }), h("ul", null, ...g.items.map((x) => h("li", { text: x })))]),
+    h("p", { class: "claro", text: "Resumen de las Reglas Oficiales de Baloncesto FIBA 2026 (vigentes desde el 1-10-2026). La competición puede aplicar su propio reglamento." }));
 }
 
 function explicacionEquipo() {

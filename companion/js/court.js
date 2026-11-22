@@ -6,7 +6,7 @@
 // asignarZona() debe mantenerse sincronizada con assign_zone() en feb_scraper/index.py.
 import { h, s } from "./util.js";
 
-export const C = { L: 14, W: 15, HX: 1.575, HY: 7.5, R3: 6.75, ESQ: 0.9, KW: 4.9, KD: 5.8, FT: 1.8, RA: 1.25 };
+export const C = { L: 14, W: 15, HX: 1.575, HY: 7.5, R3: 6.75, ESQ: 0.9, KW: 4.9, KD: 5.8, FT: 1.8, RA: 1.275 };
 export const M = 0.9; // margen visual alrededor de la pista (m)
 export const VB = { w: C.W + 2 * M, h: C.L + 2 * M };
 
@@ -72,7 +72,7 @@ function capaLineas() {
   p(linea([[0, C.ESQ], [CORNER_X, C.ESQ]]));
   p(linea([[0, C.W - C.ESQ], [CORNER_X, C.W - C.ESQ]]));
   p(linea(ARCO3));
-  p(linea([[0, C.HY - C.RA], ...arco(C.HX, C.HY, C.RA, -Math.PI / 2, Math.PI / 2, 24), [0, C.HY + C.RA]]));
+  p(linea([[1.2, C.HY - C.RA], ...arco(C.HX, C.HY, C.RA, -Math.PI / 2, Math.PI / 2, 24), [1.2, C.HY + C.RA]]));
   p(linea(arco(C.L, C.W / 2, C.FT, Math.PI / 2, (3 * Math.PI) / 2)));
   p(linea([[1.2, C.HY - 0.9], [1.2, C.HY + 0.9]]), "c-tablero");
   g.append(s("circle", { class: "c-aro", cx: C.HY + M, cy: (FLIP ? 2 * C.L - C.HX : C.HX) + M, r: 0.225 }));

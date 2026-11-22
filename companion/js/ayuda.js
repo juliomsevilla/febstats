@@ -1,7 +1,7 @@
 // Textos de ayuda: tooltips de cabeceras y explicaciones (índice, perfil, Spread/Range).
 export const AYUDA = {
   posicion: "Posición en la clasificación", equipo: "Equipo", jugador: "Nombre del jugador", rival: "Equipo rival en ese partido",
-  pj: "Partidos jugados", pg: "Partidos ganados", pp: "Partidos perdidos",
+  pj: "Partidos jugados", ptos: "Puntos de clasificación FIBA: 2 por victoria, 1 por derrota, 0 por derrota por incomparecencia. Informativo: la tabla se ordena como la FEB (victorias y diferencia de puntos)", pg: "Partidos ganados", pp: "Partidos perdidos",
   pf: "Puntos a favor: puntos anotados por el equipo", pc: "Puntos en contra: puntos recibidos por el equipo",
   dif: "Diferencia de puntos (PF − PC). Positivo = anota más de lo que recibe",
   pf_prom: "Puntos a favor por partido jugado", pc_prom: "Puntos en contra por partido jugado",

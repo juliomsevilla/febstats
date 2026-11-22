@@ -26,7 +26,7 @@ function lineasMedia(mirror) {
       f([[0, KY0], [C.KD, KY0], [C.KD, KY1], [0, KY1]]),
       f(arco(C.KD, C.W / 2, C.FT, -Math.PI / 2, Math.PI / 2)),
       f([[0, C.ESQ], [CORNER_X, C.ESQ]]), f([[0, C.W - C.ESQ], [CORNER_X, C.W - C.ESQ]]), f(arco(C.HX, C.HY, C.R3, a0, a1, 90)),
-      f([[0, C.HY - C.RA], ...arco(C.HX, C.HY, C.RA, -Math.PI / 2, Math.PI / 2, 24), [0, C.HY + C.RA]]),
+      f([[1.2, C.HY - C.RA], ...arco(C.HX, C.HY, C.RA, -Math.PI / 2, Math.PI / 2, 24), [1.2, C.HY + C.RA]]),
       f(arco(C.L, C.W / 2, C.FT, Math.PI / 2, (3 * Math.PI) / 2)),
       f([[1.2, C.HY - 0.9], [1.2, C.HY + 0.9]]),
     ],
@@ -48,7 +48,14 @@ export function pistaGrupo(completa) {
     g.append(s("path", { d: ruta(l.punteada), fill: "none", stroke: COL.linea, "stroke-width": 0.07, "stroke-dasharray": "0.3 0.25" }));
     const [cx, cy] = pv(l.aro); g.append(s("circle", { cx, cy, r: 0.225, fill: "none", stroke: COL.balon, "stroke-width": 0.09 }));
   }
-  if (completa) g.append(s("path", { d: ruta([[C.L, 0], [C.L, C.W]]), fill: "none", stroke: COL.linea, "stroke-width": 0.07 }));
+  if (completa) {
+    g.append(s("path", { d: ruta([[C.L, 0], [C.L, C.W]]), fill: "none", stroke: COL.linea, "stroke-width": 0.07 }));
+    g.append(s("path", { d: ruta(arco(C.L, C.W / 2, C.FT, 0, 2 * Math.PI, 48)), fill: "none", stroke: COL.linea, "stroke-width": 0.07 })); // círculo central r = 1,80 m
+  }
+  // líneas de saque (art. 2.5.6): 0,15 m, fuera de pista, a 8,325 m de cada línea de fondo
+  for (const x of completa ? [8.325, 2 * C.L - 8.325] : [8.325]) for (const [y0, y1] of [[-0.15, 0], [C.W, C.W + 0.15]]) {
+    g.append(s("path", { d: ruta([[x, y0], [x, y1]]), fill: "none", stroke: COL.linea, "stroke-width": 0.07 }));
+  }
   return { g, vb: [ancho, alto] };
 }
 
