@@ -143,6 +143,6 @@ function importar(root) {
     catch (e) { msg.textContent = String(e); }
   };
   return h("div", { class: "card" }, h("h2", { text: "Importar datos que ya tengo" }),
-    h("p", { class: "vid-ayuda", text: "Si ya tienes archivos .db de grupos (por ejemplo «grupo_tercera_feb_….db» de otro ordenador o del programa anterior), impórtalos aquí y aparecerán en la lista de datos guardados." }),
+    h("p", { class: "vid-ayuda", text: "Si ya tienes archivos .db de grupos (por ejemplo «grupo_tercera_feb_….db» de otro ordenador o del programa anterior), impórtalos aquí y aparecerán en la lista de datos guardados. También sirve para los partidos registrados con FEBstats Directo: el .db que exporta se incorpora a la base de su grupo sin tocar lo descargado de la FEB (los amistosos no puntúan en la clasificación)." }),
     h("div", { class: "vid-herr" }, h("button", { type: "button", class: "btn primario", onclick: hacer }, "Importar archivo(s) .db…")), msg);
 }
