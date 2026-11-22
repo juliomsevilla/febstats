@@ -1,9 +1,14 @@
 // Ajustes: almacenamiento, persistencia, datos y diagnóstico.
-import { h, limpiar, btn, toast, confirmar, dialogo } from "../util.js";
+import { h, limpiar, btn, toast, confirmar, dialogo, tabsBar } from "../util.js";
+import { panelAyuda, panelAutoria, panelLicencia } from "../info.js";
 import { app, cargarTodo, borrarSesion } from "../estado.js";
 import { idb, pedirPersistencia } from "../idb.js";
 import { APP_VERSION } from "../grupo.js";
 import { navegar } from "../app.js";
+
+// Pestañas de Ajustes (igual que en FEBstats Companion).
+const TABS = [["almacen", "Almacenamiento y datos"], ["ayuda", "Ayuda"], ["autoria", "Autoría"], ["licencia", "Licencia"]];
+let tab = "almacen";
 
 export function vistaAjustes(cont) {
   const raiz = h("div", { class: "ajustes" });
@@ -14,11 +19,17 @@ export function vistaAjustes(cont) {
 
   function construir() {
     const p = app.persistencia || {};
+    const cuerpo = h("div", { class: "ajustes-cuerpo" });
     raiz.append(
       h("div", { class: "lista-cab" },
         h("div", null, h("h1", { text: "Ajustes" }), h("p", { class: "sub", text: "Todo se guarda en este iPad. No hay cuentas, ni nube, ni red." })),
         h("span", { class: "pill ok", text: `v${APP_VERSION}` })),
-      h("div", { class: "rejilla dos" },
+      tabsBar(TABS, tab, (v) => { tab = v; pintar(); }),
+      cuerpo);
+    if (tab === "ayuda") { panelAyuda(cuerpo); return; }
+    if (tab === "autoria") { panelAutoria(cuerpo); return; }
+    if (tab === "licencia") { panelLicencia(cuerpo); return; }
+    cuerpo.append(h("div", { class: "rejilla dos" },
         h("article", { class: "card" },
           h("h2", { text: "Almacenamiento" }),
           h("dl", { class: "datos-clave" },
@@ -53,16 +64,7 @@ export function vistaAjustes(cont) {
                 const ok = await confirmar("Borrar sesión", "Se borrará esta sesión del iPad. La exportación de partidos finalizados está en Inicio y solo está disponible para partidos finalizados.", { ok: "Borrar", peligro: true });
                 if (ok) { await borrarSesion(s.id); await cargarTodo(); pintar(); }
               }, { clase: "btn pequeno fantasma" }))))) : h("p", { class: "sub", text: "No hay sesiones." })),
-        h("article", { class: "card" },
-          h("h2", { text: "Cómo funciona" }),
-          h("div", { class: "md", html: `
-<p><b>Fuente de verdad:</b> cada toque se añade a un registro de eventos en IndexedDB y se proyecta al instante al boxscore. Si cierras la app, se rejuega al abrir.</p>
-<p><b>Exportación:</b> el .db contiene las tablas de FEBstats (mismo esquema y orden de columnas) más las tablas <code>directo_*</code> y tres columnas aditivas: <code>tiros.puntos</code>, <code>tiros.evento_uid</code> y <code>tiros.sesion_uid</code>.</p>
-<p><b>Importación en el Mac:</b> en FEBstats para Mac, Datos → Importar y elige el .db exportado. Si ya tienes esa base de grupo, se <i>incorporan</i> solo los partidos registrados con Directo (identificados por <code>directo-…</code>) y lo descargado de la FEB no se toca; los amistosos no puntúan en la clasificación.</p>
-<p><b>Privacidad:</b> no hay telemetría, ni CDN, ni peticiones de red. La única red es la descarga inicial de la app desde GitHub Pages.</p>`})
-      )),
-      h("p", { class: "nota-pie", text: "FEBstats Directo · parte de la familia FEBstats (Mac, Companion y Directo). Reglas FIBA 2026, pista FIBA, coordenadas plegadas Xinv/Yinv, prórrogas de 5:00." }),
-    );
+      ));
   }
 
   function diagnostico() {

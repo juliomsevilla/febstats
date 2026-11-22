@@ -270,3 +270,9 @@ export const icono = (n) => s("svg", { class: "ico", viewBox: "0 0 24 24", "aria
 /** Botón con icono + texto. */
 export const btn = (texto, onclick, { clase = "btn", icon = "", type = "button", ...rest } = {}) =>
   h("button", { type, class: clase, onclick, ...rest }, icon ? icono(icon) : null, texto ? h("span", { text: texto }) : null);
+
+/** Pestañas (mismo componente que en FEBstats Companion). */
+export function tabsBar(opciones, actual, onCambio) {
+  return h("div", { class: "tabs", role: "tablist" }, opciones.map(([v, l]) =>
+    h("button", { type: "button", role: "tab", "aria-selected": String(v === actual), onclick: () => onCambio(v) }, l)));
+}
