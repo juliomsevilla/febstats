@@ -190,6 +190,8 @@ export async function cargarSesion(id) {
   app.ladoAtaque = s.ladoAtaque || "local";
   app.seleccion = null;
   app.eventos = (await idb.porIndice("eventos", "sesion", id)).sort((a, b) => a.n - b.n);
+  // Si la app se cerró entre guardar el evento y la sesión, el contador pudo quedar atrás: se recupera del registro.
+  s.ultimoN = Math.max(Number(s.ultimoN) || 0, ...app.eventos.map((e) => Number(e.n) || 0));
   if (app.grupoId !== s.grupoId) { try { await abrirGrupo(s.grupoId); } catch (e) { app.errorGrupo = e.message; } }
   reproyectar();
   avisar();
@@ -217,6 +219,14 @@ export async function guardarSesion() {
   if (i >= 0) app.sesiones[i] = s; else app.sesiones.unshift(s);
 }
 
+let loteActivo = null;
+/** Agrupa los eventos que genera una sola acción del usuario (p. ej. robo + pérdida del rival + posesión) para anularlos juntos. */
+export async function lote(fn) {
+  if (loteActivo) return fn();
+  loteActivo = uid("lo");
+  try { return await fn(); } finally { loteActivo = null; }
+}
+
 /** Añade un evento al registro y reproyecta. */
 export async function agregar(t, payload = {}) {
   if (!app.sesion) throw new Error("No hay sesión abierta.");
@@ -235,6 +245,7 @@ export async function agregar(t, payload = {}) {
     dorsal: payload.dorsal != null ? String(payload.dorsal) : null,
     datos: payload.datos || {},
   };
+  if (payload.grupo || loteActivo) ev.grupo = payload.grupo || loteActivo;
   await idb.put("eventos", ev);
   app.eventos.push(ev);
   reproyectar();
@@ -249,11 +260,18 @@ function anulados() {
 
 export async function deshacer() {
   const anul = anulados();
+  // «reloj» y «posesión» sueltos no son una acción del usuario; los que van dentro de un lote se anulan con él.
   const saltar = new Set(["anulacion", "reloj", "posesion"]);
   const ultimo = [...app.eventos].reverse().find((e) => !saltar.has(e.t) && !anul.has(e.uid) && !e.soloLocal);
-  if (!ultimo) return false;
-  await agregar("anulacion", { uid: uid("anu"), datos: { ref: ultimo.uid, tipo: ultimo.t } });
-  return true;
+  if (!ultimo) return null;
+  const grupo = ultimo.grupo ? app.eventos.filter((e) => e.grupo === ultimo.grupo && !anul.has(e.uid) && e.t !== "anulacion") : [ultimo];
+  const lote = uid("lo");
+  for (const e of grupo.reverse()) await agregar("anulacion", { uid: uid("anu"), grupo: lote, datos: { ref: e.uid, tipo: e.t } });
+  // La flecha de ataque sigue al último evento de posesión que siga vigente.
+  const vivos = anulados();
+  const pos = [...app.eventos].reverse().find((e) => e.t === "posesion" && !vivos.has(e.uid));
+  if (pos?.lado) { app.ladoAtaque = pos.lado; await guardarSesion(); avisar(); }
+  return ultimo;
 }
 
 export async function borrarSesion(id) {
@@ -379,6 +397,13 @@ export async function editarEvento(uid, cambios = {}) {
   if (i < 0) return null;
   const previo = app.eventos[i];
   const ev = { ...previo, ...cambios, datos: { ...(previo.datos || {}), ...(cambios.datos || {}) } };
+  // Rastro de la edición: el registro conserva lo que había antes.
+  ev.ediciones = [...(previo.ediciones || []), { ts: Date.now(), antes: { lado: previo.lado, dorsal: previo.dorsal, datos: previo.datos } }].slice(-10);
+  if (ev.t === "tiro") {
+    ev.datos.tl = Number(ev.datos.puntos) === 1;
+    // Un tiro libre no tiene posición en pista: las coordenadas no pueden quedar de un tiro de campo anterior.
+    if (ev.datos.tl) { ev.datos.X = ev.datos.Y = ev.datos.Xinv = ev.datos.Yinv = null; }
+  }
   // Si cambia el lado o el dorsal, se recompone la identidad visible.
   if (ev.lado && app.sesion?.[ev.lado]) {
     ev.equipo = app.sesion[ev.lado].nombre;

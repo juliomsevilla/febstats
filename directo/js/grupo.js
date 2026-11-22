@@ -456,6 +456,12 @@ function escribirPartidoFEB(db, sesion, proy) {
     ]);
   }
 
+  // Datos del partido que el directo conoce y que el desktop usa: pabellón, colores y faltas de equipo por cuarto.
+  const faltasQ = (lado) => JSON.stringify(Object.fromEntries(Object.entries(proy.faltasPeriodo?.[lado] || {})));
+  db.run(`UPDATE partidos SET pabellon=?, local_color=?, visitante_color=?, local_faltas=?, visitante_faltas=?, estado_codigo=? WHERE partido_id=?`, [
+    sesion.pabellon || null, sesion.local?.color || null, sesion.visitante?.color || null, faltasQ("local"), faltasQ("visitante"), "DIRECTO", pid,
+  ]);
+
   for (const t of ["jugador_stats", "equipo_stats"]) db.run(`DELETE FROM ${t} WHERE partido_id=?`, [pid]);
   const filasJ = [], filasE = [];
   for (const lado of LADOS) {

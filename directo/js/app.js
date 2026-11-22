@@ -1,5 +1,6 @@
 // Arranque, navegación y latido del reloj.
-import { h, limpiar, icono, toast } from "./util.js";
+import { h, limpiar, icono, toast, mmss } from "./util.js";
+import { DURACION } from "./grupo.js";
 import { app, cargarTodo, cargarSesion, relojAhora, pararReloj, suscribir, etiquetaPeriodo } from "./estado.js";
 import { pedirPersistencia } from "./idb.js";
 import { vistaInicio } from "./views/inicio.js";
@@ -88,6 +89,7 @@ function construirShell() {
 function renderRuta() {
   const { nombre, params } = rutaActual();
   vistaActual = nombre;
+  document.body.dataset.ruta = nombre;
   if (limpiarVista) { try { limpiarVista(); } catch (e) { console.error(e); } limpiarVista = null; }
   const cont = document.getElementById("vista");
   limpiar(cont);
@@ -132,12 +134,11 @@ export function actualizarCabecera() {
 function actualizarRelojes() {
   if (!app.sesion) return;
   const v = relojAhora(app.sesion.reloj);
-  const m = Math.floor(Math.max(0, v) / 60), sg = Math.floor(Math.max(0, v) % 60);
-  const texto = `${m}:${String(sg).padStart(2, "0")}`;
+  const texto = mmss(Math.max(0, v), v < 60); // décimas en el último minuto, como el marcador oficial
   document.querySelectorAll("[data-reloj]").forEach((el) => { el.textContent = texto; });
   const s = app.sesion;
   document.querySelectorAll("[data-barra-reloj]").forEach((el) => {
-    const dur = s.reloj.tipoPeriodo === "prorroga" ? 300 : 600;
+    const dur = s.reloj.tipoPeriodo === "prorroga" ? DURACION.prorroga : DURACION.regular;
     el.style.setProperty("--pct", `${Math.max(0, Math.min(100, (v / dur) * 100))}%`);
   });
 }
@@ -189,7 +190,7 @@ async function arrancar() {
   suscribir(() => { actualizarCabecera(); });
   if (!location.hash) location.hash = "#/inicio";
   renderRuta();
-  setInterval(latido, 500);
+  setInterval(latido, 100);
   const guardarReloj = () => {
     if (app.soloConsulta) return;
     if (app.sesion?.reloj.corriendo) {
@@ -197,10 +198,19 @@ async function arrancar() {
       // descontando mientras el iPad está bloqueado o en otra app.
       const v = relojAhora(app.sesion.reloj);
       app.sesion.reloj = { ...app.sesion.reloj, reloj: Math.max(0, v), corriendo: false, desde: null };
+      app.relojParadoAlSalir = Math.max(0, v);
       import("./estado.js").then((m) => m.guardarSesion()).catch(() => {});
     }
   };
-  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") guardarReloj(); });
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") guardarReloj();
+    else if (app.relojParadoAlSalir != null) {
+      // Al volver se avisa de dónde quedó el reloj para que no se pierda tiempo sin darse cuenta.
+      toast(`El reloj se paró en ${mmss(app.relojParadoAlSalir)} al salir de la app. Ajústalo y pulsa Iniciar.`, "aviso");
+      app.relojParadoAlSalir = null;
+      actualizarCabecera();
+    }
+  });
   window.addEventListener("pagehide", guardarReloj);
   const p = await pedirPersistencia();
   app.persistencia = p;

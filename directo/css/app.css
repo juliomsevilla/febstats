@@ -1,7 +1,7 @@
 /* FEBstats Directo — PWA de pista. Tokens claros/oscuros, táctil, landscape-first. */
 /* Fallback para iPadOS < 17.5 (sin light-dark). */
 :root {
-  --bg: #f4f4f2; --panel: #ffffff; --panel-2: #fafaf8; --borde: #e4e4e0;
+  --bg: #f5f5f4; --panel: #ffffff; --panel-2: #fafaf9; --borde: #e5e5e3;
   --texto: #1b1917; --suave: #6c6b65; --acento-texto: #c2410c; --acento-soft: #fff0e8;
   --ok: #18804c; --ok-soft: #e7f6ee; --mal: #c0392b; --mal-soft: #fdecea;
   --azul: #2a5fd0; --azul-soft: #e9efff; --rojo: #c2332b; --rojo-soft: #fdeceb;
@@ -9,7 +9,7 @@
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #0f1012; --panel: #191a1d; --panel-2: #212226; --borde: #2c2d33;
+    --bg: #111113; --panel: #1a1a1d; --panel-2: #212125; --borde: #2d2d32;
     --texto: #f1f1ef; --suave: #9b9ba3; --acento-texto: #ff8a4d; --acento-soft: #3a2013;
     --ok: #3fb97f; --ok-soft: #122b1e; --mal: #ef6a5b; --mal-soft: #341513;
     --azul: #7f9df0; --azul-soft: #18203a; --rojo: #ef7d74; --rojo-soft: #361715;
@@ -18,10 +18,10 @@
 }
 :root {
   color-scheme: light dark;
-  --bg: light-dark(#f4f4f2, #0f1012);
-  --panel: light-dark(#ffffff, #191a1d);
-  --panel-2: light-dark(#fafaf8, #212226);
-  --borde: light-dark(#e4e4e0, #2c2d33);
+  --bg: light-dark(#f5f5f4, #111113);
+  --panel: light-dark(#ffffff, #1a1a1d);
+  --panel-2: light-dark(#fafaf9, #212125);
+  --borde: light-dark(#e5e5e3, #2d2d32);
   --texto: light-dark(#1b1917, #f1f1ef);
   --suave: light-dark(#6c6b65, #9b9ba3);
   --acento: #f4571d;
@@ -457,7 +457,7 @@ select { max-width: 280px; }
 /* ---------- tema explícito (claro/oscuro), como FEBstats ---------- */
 :root[data-theme="light"] {
   color-scheme: light;
-  --bg: #f4f4f2; --panel: #ffffff; --panel-2: #fafaf8; --borde: #e4e4e0;
+  --bg: #f5f5f4; --panel: #ffffff; --panel-2: #fafaf9; --borde: #e5e5e3;
   --texto: #1b1917; --suave: #6c6b65; --acento-texto: #c2410c; --acento-soft: #fff0e8;
   --ok: #18804c; --ok-soft: #e7f6ee; --mal: #c0392b; --mal-soft: #fdecea;
   --azul: #2a5fd0; --azul-soft: #e9efff; --rojo: #c2332b; --rojo-soft: #fdeceb;
@@ -465,7 +465,7 @@ select { max-width: 280px; }
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --bg: #0f1012; --panel: #191a1d; --panel-2: #212226; --borde: #2c2d33;
+  --bg: #111113; --panel: #1a1a1d; --panel-2: #212125; --borde: #2d2d32;
   --texto: #f1f1ef; --suave: #9b9ba3; --acento-texto: #ff8a4d; --acento-soft: #3a2013;
   --ok: #3fb97f; --ok-soft: #122b1e; --mal: #ef6a5b; --mal-soft: #341513;
   --azul: #7f9df0; --azul-soft: #18203a; --rojo: #ef7d74; --rojo-soft: #361715;
@@ -728,4 +728,24 @@ select { max-width: 280px; }
   /* En iPad el boxscore se lee mejor con cada equipo a ancho completo. */
   .rejilla.dos.box-tablas { grid-template-columns: 1fr; }
   .rejilla.dos.box-mapas { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* ---------- Táctil: objetivos de al menos 44 pt (Apple HIG) y texto legible, en cualquier ancho ---------- */
+@media (pointer: coarse) {
+  .controles-grid .btn { min-height: 44px; font-size: 13px; }
+  .tm-btn { min-height: 44px; padding: 4px 12px; font-size: 12px; }
+  .tm-btn b { font-size: 16px; }
+  .jug-banco, .jug-pista, .accion-mini { min-height: 44px; }
+  .chip-asistencia { min-height: 44px; padding: 8px 14px; font-size: 14px; }
+  .btn.mini { min-width: 44px; min-height: 44px; }
+  .accion-mini .am-lbl { font-size: 11px; }
+}
+.tm-queda { font-weight: 600; font-size: .85em; opacity: .75; }
+
+/* ---------- Aviso al sostener el iPad en vertical durante el directo ---------- */
+.gira { display: none; }
+@media (orientation: portrait) and (max-width: 820px) {
+  body[data-ruta="partido"] .gira { position: fixed; inset: 0; z-index: 90; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; background: var(--bg); color: var(--texto); text-align: center; padding: 24px; }
+  .gira strong { font-size: 20px; }
+  .gira span { color: var(--suave); }
 }

@@ -1,13 +1,13 @@
 // Pantalla de partido en directo: marcador, controles, pista y acciones laterales.
 import { h, limpiar, btn, toast, dialogo, confirmar, mmss, jornadaTexto, nombreJugador, etiquetaJugador } from "../util.js";
 import {
-  app, suscribir, agregar, deshacer, iniciarReloj, pararReloj, ajustarReloj, relojActual,
+  app, suscribir, agregar, deshacer, lote, iniciarReloj, pararReloj, ajustarReloj, relojActual,
   iniciarPeriodo, finPeriodo, finalizar, siguientePeriodo, cambiarAtaque,
   etiquetaPeriodo, equipoDefensor, defensaIndicada, marcarDefensa, editarEvento, eliminarEvento,
 } from "../estado.js";
 import { crearCancha, C } from "../court.js";
 import { faltasCuarto } from "../model.js";
-import { statsVacias } from "../grupo.js";
+import { statsVacias, puntosDeTiro } from "../grupo.js";
 import { abrirEditorNota } from "../notas-editor.js";
 import { navegar } from "../app.js";
 
@@ -20,6 +20,8 @@ const ACCIONES = [
   ["A", "Asistencia", "Asistencia", (fn) => fn("asistencia")],
   ["R", "Robo", "Recuperación / robo", (fn) => fn("robo")],
   ["P", "Pérdida", "Pérdida", (fn) => fn("perdida")],
+  ["TP", "Tapón", "Tapón (bloqueo) a un tiro rival", (fn) => fn("tapon")],
+  ["FR", "F. recib.", "Falta recibida (el jugador es objeto de falta)", (fn) => fn("falta_recibida")],
 ];
 
 export function vistaPartido(cont) {
@@ -190,7 +192,8 @@ export function vistaPartido(cont) {
     const faltas = faltasCuarto(app.proy, lado);
     // El equipo entra en situación de penalización al llegar a 4 faltas de equipo.
     const bonus = faltas >= 4;
-    const tm = app.proy?.tiemposMuertos?.[lado] || 0;
+    const tmInfo = tmTramo(lado);
+    const tmQuedan = Math.max(0, tmInfo.limite - tmInfo.usados.length);
     return h("div", { class: "marcador-eq " + lado, style: estiloLado(lado) },
       h("div", { class: "meq-nombre" },
         h("span", { class: "meq-color" }),
@@ -202,7 +205,7 @@ export function vistaPartido(cont) {
         h("button", {
           type: "button", class: "tm-btn", title: "Anotar tiempo muerto",
           onclick: () => anotarTiempoMuerto(lado),
-        }, h("span", { text: "TM" }), h("b", { text: String(tm) }))));
+        }, h("span", { text: "TM" }), h("b", { text: String(tmQuedan) }), h("span", { class: "tm-queda", text: "quedan" }))));
   }
 
   function esUltimoCuarto() { return app.sesion.reloj.cuarto >= 4; }
@@ -215,7 +218,7 @@ export function vistaPartido(cont) {
       btn("+1", () => ajustarReloj(1), { clase: "btn pequeno control", title: "Sumar 1 segundo" }),
       btn("+10", () => ajustarReloj(10), { clase: "btn pequeno control", title: "Sumar 10 segundos" }),
       btn(s.reloj.corriendo ? "Parar" : "Iniciar", alternarReloj, { clase: "btn pequeno control " + (s.reloj.corriendo ? "aviso" : "primario"), icon: s.reloj.corriendo ? "pausa" : "play" }),
-      btn("Deshacer", async () => { const ok = await deshacer(); toast(ok ? "Última acción anulada." : "No hay nada que deshacer.", ok ? "ok" : "aviso"); }, { clase: "btn pequeno control", icon: "deshacer" }),
+      btn("Deshacer", async () => { const ev = await deshacer(); toast(ev ? `Anulado: ${resumenEvento(ev)}` : "No hay nada que deshacer.", ev ? "ok" : "aviso"); }, { clase: "btn pequeno control", icon: "deshacer" }),
       btn("Fin cuarto", cerrarCuarto, { clase: "btn pequeno control" }),
       btn("Siguiente", siguiente, { clase: "btn pequeno control primario", title: esUltimoCuarto() ? "Siguiente cuarto, prórroga o final" : "Siguiente cuarto" }),
       btn("Boxscore", () => navegar("boxscore"), { clase: "btn pequeno control", icon: "boxscore", title: "Ver el boxscore del partido" }),
@@ -369,6 +372,8 @@ export function vistaPartido(cont) {
             if (accion === "asistencia") return accionAsistencia();
             if (accion === "robo") return accionRobo();
             if (accion === "perdida") return accionPerdida();
+            if (accion === "tapon") return accionSimple("tapon", "Tapón");
+            if (accion === "falta_recibida") return accionSimple("falta", "Falta recibida", { clase: "recibida", tipo: null });
           });
         },
       },
@@ -621,7 +626,8 @@ export function vistaPartido(cont) {
     pintar();
   }
 
-  async function registrarTiro(resultado) {
+  const registrarTiro = (resultado) => lote(() => registrarTiroInterno(resultado));
+  async function registrarTiroInterno(resultado) {
     const s = app.seleccion;
     const p = pendiente;
     if (!s || !p) return;
@@ -630,9 +636,16 @@ export function vistaPartido(cont) {
     }
     if (personaExpulsada(s)) { toast("Ese jugador está expulsado: no puede anotar más.", "aviso"); return; }
     const xinv = p.xinv, yinv = p.yinv;
-    const X = xinv == null ? null : (s.lado === "local" ? xinv : 28 - xinv);
-    const Y = yinv == null ? null : (s.lado === "local" ? yinv : 15 - yinv);
+    // X/Y son la posición real en pista; Xinv/Yinv, la misma plegada a media pista. Depende del aro atacado (cambia en el descanso), no del equipo.
+    const derecha = (p.basket || basketDe(s.lado)) === "right";
+    const X = xinv == null ? null : (derecha ? 28 - xinv : xinv);
+    const Y = yinv == null ? null : (derecha ? 15 - yinv : yinv);
     const tipo = p.tipo;
+    if (xinv != null && (tipo === 2 || tipo === 3) && puntosDeTiro(xinv, yinv) !== tipo) {
+      const real = puntosDeTiro(xinv, yinv);
+      const sigue = await confirmar("¿Seguro que es de " + tipo + "?", `El punto tocado está ${real === 3 ? "fuera" : "dentro"} de la línea de 3 puntos: sería un tiro de ${real}.`, { ok: `Registrar de ${tipo}`, });
+      if (!sigue) return;
+    }
     pendiente = null;
     ubicacion = null;
     const ev = await agregar("tiro", {
@@ -658,7 +671,8 @@ export function vistaPartido(cont) {
     pintar();
   }
 
-  async function accionRebote(tipo) {
+  const accionRebote = (tipo) => lote(() => accionReboteInterno(tipo));
+  async function accionReboteInterno(tipo) {
     const s = app.seleccion;
     if (!s) return;
     asistencia = null;
@@ -667,7 +681,8 @@ export function vistaPartido(cont) {
     pintar();
   }
 
-  async function accionRobo() {
+  const accionRobo = () => lote(() => accionRoboInterno());
+  async function accionRoboInterno() {
     const s = app.seleccion;
     if (!s) return;
     asistencia = null;
@@ -677,7 +692,8 @@ export function vistaPartido(cont) {
     pintar();
   }
 
-  async function accionPerdida() {
+  const accionPerdida = () => lote(() => accionPerdidaInterno());
+  async function accionPerdidaInterno() {
     const s = app.seleccion;
     if (!s) return;
     asistencia = null;
@@ -826,6 +842,15 @@ export function vistaPartido(cont) {
       });
     }
     toast(`Falta registrada: ${quien} (${codigo}).`, "ok");
+    pintar();
+  }
+
+  async function accionSimple(tipo, nombre, datos = {}) {
+    const s = app.seleccion;
+    if (!s) return;
+    asistencia = null;
+    await eventoJugador(tipo, datos);
+    toast(`${nombre}: ${nombreSel()}.`, "ok");
     pintar();
   }
 
@@ -1031,10 +1056,28 @@ export function vistaPartido(cont) {
     pintar();
   }
 
+  // Tiempos muertos FIBA (art. 18): 2 en la 1.ª parte, 3 en la 2.ª (máx. 2 con 2:00 o menos en el 4.º) y 1 por prórroga.
+  const tramoTM = (cuarto) => (cuarto <= 2 ? "H1" : cuarto <= 4 ? "H2" : "P" + cuarto);
+  const limiteTM = (tramo) => (tramo === "H1" ? 2 : tramo === "H2" ? 3 : 1);
+  function tmTramo(lado) {
+    const tramo = tramoTM(app.sesion.reloj.cuarto);
+    const anul = new Set(app.eventos.filter((e) => e.t === "anulacion").map((e) => e.datos?.ref));
+    const usados = app.eventos.filter((e) => e.t === "tiempo_muerto" && e.lado === lado && !anul.has(e.uid) && tramoTM(e.cuarto) === tramo);
+    return { usados, tramo, limite: limiteTM(tramo) };
+  }
   async function anotarTiempoMuerto(lado) {
+    const { usados, tramo, limite } = tmTramo(lado);
+    if (usados.length >= limite) {
+      const ok = await confirmar("Sin tiempos muertos", `${equipo(lado).nombre} ya ha usado los ${limite} tiempos muertos ${tramo === "H1" ? "de la primera parte" : tramo === "H2" ? "de la segunda parte" : "de esta prórroga"}. ¿Anotar otro igualmente?`, { ok: "Anotar", peligro: true });
+      if (!ok) return;
+    } else if (tramo === "H2" && app.sesion.reloj.cuarto === 4 && relojActual() <= 120 && usados.filter((e) => e.cuarto === 4 && e.reloj <= 120).length >= 2) {
+      const ok = await confirmar("Límite en los últimos 2:00", "Solo se pueden pedir 2 tiempos muertos con 2:00 o menos en el 4.º cuarto. ¿Anotarlo igualmente?", { ok: "Anotar", peligro: true });
+      if (!ok) return;
+    }
     await agregar("tiempo_muerto", { lado });
-    const n = app.proy?.tiemposMuertos?.[lado] || 0;
-    toast(`Tiempo muerto de ${equipo(lado).nombre} (${n}).`, "ok");
+    await pararReloj();
+    const n = tmTramo(lado).usados.length;
+    toast(`Tiempo muerto de ${equipo(lado).nombre} (${n} de ${limite}).`, "ok");
     pintar();
   }
 

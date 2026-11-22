@@ -5,19 +5,21 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>FEBstats Directo</title>
 <meta name="description" content="Scouting y boxscore en directo para Segunda y Tercera FEB. Offline, en el iPad.">
-<meta name="theme-color" content="#f4571d">
+<meta name="theme-color" content="#f5f5f4" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#111113" media="(prefers-color-scheme: dark)">
 <meta name="color-scheme" content="light dark">
 <script>try{const t=localStorage.getItem("tema");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t;}catch(e){}</script>
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="apple-mobile-web-app-title" content="FEBstats Directo">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Directo">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
 <link rel="stylesheet" href="css/app.css">
 </head>
 <body class="sin-shell">
+<div class="gira" role="alert"><strong>Gira el iPad</strong><span>El directo se registra con el iPad en horizontal, para ver la pista y los dos equipos a la vez.</span></div>
 <script src="vendor/sql-wasm.js"></script>
 <script type="module" src="js/app.js"></script>
 <noscript><p style="padding:2rem;font:16px system-ui">Esta app necesita JavaScript para funcionar.</p></noscript>

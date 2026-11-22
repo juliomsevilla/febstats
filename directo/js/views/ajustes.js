@@ -58,10 +58,10 @@ export function vistaAjustes(cont) {
           h("div", { class: "md", html: `
 <p><b>Fuente de verdad:</b> cada toque se añade a un registro de eventos en IndexedDB y se proyecta al instante al boxscore. Si cierras la app, se rejuega al abrir.</p>
 <p><b>Exportación:</b> el .db contiene las tablas de FEBstats (mismo esquema y orden de columnas) más las tablas <code>directo_*</code> y tres columnas aditivas: <code>tiros.puntos</code>, <code>tiros.evento_uid</code> y <code>tiros.sesion_uid</code>.</p>
-<p><b>Importación en el Mac:</b> el comando <code>importar_directo(ruta)</code> copia solo el namespace <code>directo_*</code> a <code>usuario.db</code>. No toca las tablas FEB.</p>
+<p><b>Importación en el Mac:</b> en FEBstats para Mac, Datos → Importar y elige el .db exportado. Si ya tienes esa base de grupo, se <i>incorporan</i> solo los partidos registrados con Directo (identificados por <code>directo-…</code>) y lo descargado de la FEB no se toca; los amistosos no puntúan en la clasificación.</p>
 <p><b>Privacidad:</b> no hay telemetría, ni CDN, ni peticiones de red. La única red es la descarga inicial de la app desde GitHub Pages.</p>`})
       )),
-      h("p", { class: "nota-pie", text: "FEBstats Directo · PWA offline para iPad. Pista FIBA, coordenadas plegadas Xinv/Yinv, prórrogas de 5:00." }),
+      h("p", { class: "nota-pie", text: "FEBstats Directo · parte de la familia FEBstats (Mac, Companion y Directo). Reglas FIBA 2026, pista FIBA, coordenadas plegadas Xinv/Yinv, prórrogas de 5:00." }),
     );
   }
 
