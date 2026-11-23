@@ -1,7 +1,7 @@
 // Nuevo partido: partido oficial de la FEB, o equipos libres (del JSON o creados desde cero).
 import { h, limpiar, btn, icono, toast, fechaCorta, jornadaTexto, dialogo, nombreJugador } from "../util.js";
 import { crearCancha } from "../court.js";
-import { app, abrirGrupo, nuevaSesion, crearGrupoSinDatos } from "../estado.js";
+import { app, abrirGrupo, nuevaSesion, crearGrupoSinDatos, guardarJugadorNuevo } from "../estado.js";
 import { listarPartidos, plantillaDe, minutosRecientes, equiposDe, scoutingEquipo } from "../grupo.js";
 import { navegar } from "../app.js";
 
@@ -199,6 +199,25 @@ export function vistaNuevo(cont) {
       campos);
   }
 
+  /** Jugador que no está en el paquete (fichaje, juvenil que sube…): se guarda en la plantilla del grupo con un id propio «directo-j-…». */
+  async function anadirJugadorNuevo(lado, dorsal, nombre) {
+    dorsal = String(dorsal || "").trim(); nombre = String(nombre || "").trim();
+    if (!dorsal || !nombre) { toast("Escribe el dorsal y el nombre.", "aviso"); return; }
+    if (st.plantilla[lado].some((j) => j.dorsal === dorsal)) { toast(`El dorsal ${dorsal} ya está en la plantilla.`, "aviso"); return; }
+    const jugadorId = `directo-j-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+    try { await guardarJugadorNuevo(st.grupoId, st.ids[lado], st.nombres[lado], { jugadorId, dorsal, nombre }); }
+    catch (e) { toast("No se pudo guardar el jugador: " + e.message, "error"); return; }
+    st.plantilla[lado] = [...st.plantilla[lado], { dorsal, nombre, jugadorId, minutos: 0 }].sort((a, b) => (+a.dorsal || 999) - (+b.dorsal || 999) || a.dorsal.localeCompare(b.dorsal));
+    toast(`${nombre} (#${dorsal}) añadido a la plantilla.`, "ok");
+    pintar();
+  }
+
+  function formAnadirJugador(lado) {
+    const d = h("input", { type: "text", inputmode: "numeric", placeholder: "Dorsal", "aria-label": "Dorsal del jugador nuevo", style: "width:5em" });
+    const n = h("input", { type: "text", placeholder: "Nombre del jugador nuevo", "aria-label": "Nombre del jugador nuevo" });
+    return h("div", { class: "acciones" }, d, n, btn("Añadir jugador", () => anadirJugadorNuevo(lado, d.value, n.value), { clase: "btn pequeno", icon: "importado" }));
+  }
+
   function rosterCard(lado, editable) {
     const jugadores = st.plantilla[lado] || [];
     const nombre = st.nombres[lado] || NOMBRE_DEF[lado];
@@ -227,7 +246,8 @@ export function vistaNuevo(cont) {
       editable ? rosterConfig(lado) : null,
       jugadores.length
         ? h("ul", { class: "roster-lista" }, lista)
-        : h("p", { class: "sub", text: st.fuente[lado] === "nuevo" ? "Sin jugadores. Escribe dorsales y pulsa «Aplicar plantilla»." : "Ese equipo no tiene plantilla en el JSON." }));
+        : h("p", { class: "sub", text: st.fuente[lado] === "nuevo" ? "Sin jugadores. Escribe dorsales y pulsa «Aplicar plantilla»." : "Ese equipo no tiene plantilla en el JSON." }),
+      editable && st.fuente[lado] === "json" && st.ids[lado] ? formAnadirJugador(lado) : null);
   }
 
   function introLibre() {

@@ -105,6 +105,14 @@ export async function guardarGrupoEnIDB(id, db, resumen, paqueteId = "") {
   return registro;
 }
 
+/** Guarda en la plantilla del grupo un jugador creado en Directo, para que esté en los partidos siguientes. Su id empieza por «directo-j-». */
+export async function guardarJugadorNuevo(grupoId, equipoId, equipo, j) {
+  const db = await abrirGrupo(grupoId);
+  db.run("INSERT OR REPLACE INTO plantilla(equipo_feb_id,equipo,jugador_id,nombre,dorsal) VALUES(?,?,?,?,?)", [String(equipoId), equipo || "", j.jugadorId, j.nombre, String(j.dorsal)]);
+  const reg = app.grupos.find((g) => g.id === grupoId);
+  await guardarGrupoEnIDB(grupoId, db, { ...(reg?.resumen || {}), jugadores: resumenGrupo(db).jugadores }, reg?.paqueteId || "");
+}
+
 export async function abrirGrupo(id) {
   if (app.grupo && app.grupoId === id) return app.grupo;
   const registro = await idb.get("grupos", id);

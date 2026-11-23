@@ -22,18 +22,26 @@ export function puntosDeTiro(xinv, yinv) {
   return triple ? 3 : 2;
 }
 
+/** Paquete de plantillas («feb-stats-plantillas»): solo equipos y jugadores, sin partidos. Se convierte en un grupo por competición/grupo/temporada. */
+function normalizarPlantillas(json) {
+  const limpiar = (t) => String(t || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  const equipos = (json.equipos || []).filter((e) => e && e.nombre);
+  if (!equipos.length) throw new Error("El archivo de plantillas no contiene ningún equipo.");
+  const porGrupo = new Map();
+  for (const e of equipos) {
+    const clave = [e.competicion, e.grupo, e.temporada].map((x) => String(x || "")).join("|");
+    if (!porGrupo.has(clave)) porGrupo.set(clave, { competicion: e.competicion || "", grupo: e.grupo || "", temporada: e.temporada || "", clasificacion: [], jugadores: [], partidos: [], partidosJugador: [], tiros: [] });
+    const p = porGrupo.get(clave);
+    const equipoId = String(e.equipo_id || `directo-eq-${limpiar(e.nombre)}`);
+    p.clasificacion.push({ equipo: e.nombre, equipo_id: equipoId, posicion: null, pj: 0, pg: 0, pp: 0, pf: 0, pc: 0 });
+    for (const j of e.jugadores || []) p.jugadores.push({ jugador: j.nombre, jugador_id: j.jugador_id || "", equipo: e.nombre, equipo_id: equipoId, dorsal: j.dorsal ?? "" });
+  }
+  return { generado: json.generado || "", version: 3, notas: [], imagenes: [], grupos: [...porGrupo.values()].map((payload) => ({ db: nombreDb(payload), payload })) };
+}
+
 export function normalizarPaquete(json) {
-  if (!json || json.formato !== "feb-stats-paquete") throw new Error("El archivo no es un paquete de FEBstats (formato «feb-stats-paquete»).");
-  if (+json.version < 3) throw new Error(`Paquete versión ${json.version}: esta app necesita la versión 3 o superior.`);
-  const grupos = (json.grupos || []).filter((g) => g && g.payload && g.payload.clasificacion);
-  if (!grupos.length) throw new Error("El paquete no contiene ningún grupo con datos.");
-  return {
-    generado: json.generado || "",
-    version: +json.version,
-    grupos: grupos.map((g) => ({ db: String(g.db || nombreDb(g.payload)), payload: g.payload })),
-    notas: Array.isArray(json.notas) ? json.notas : [],
-    imagenes: Array.isArray(json.imagenes) ? json.imagenes : [],
-  };
+  if (json?.formato === "feb-stats-plantillas") return normalizarPlantillas(json);
+  throw new Error("El archivo no es de equipos y jugadores de FEBstats (formato «feb-stats-plantillas»). Genéralo en FEBstats para Mac: Datos → Llevar equipos y jugadores a Directo.");
 }
 
 export function nombreDb(payload) {

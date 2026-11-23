@@ -29,7 +29,7 @@ function pintar(cont) {
     h("p", { class: "nota-pie" },
       "Los datos viven solo en este iPad. El botón Exportar solo genera el .db de los partidos finalizados.",
       h("br"),
-      "Formato admitido: FEBstats-iPad.json (paquete v3)."),
+      "Formato admitido: FEBstats-plantillas.json (Mac: Datos → Llevar equipos y jugadores a Directo)."),
   ));
 }
 
@@ -127,7 +127,7 @@ async function importar(file, cont) {
       await sembrarNotasPaquete(paquete.notas, { grupo: resumenes[0].id, temporada: resumenes[0].resumen?.temporada });
       d.close();
       const r = resumenes[0].resumen;
-      toast(`Importado: ${r.competicion} · ${r.grupo} · ${r.partidos} partidos, ${r.tiros} tiros.`, "ok");
+      toast(r.partidos || r.tiros ? `Importado: ${r.competicion} · ${r.grupo} · ${r.partidos} partidos, ${r.tiros} tiros.` : `Importado: ${r.competicion} · ${r.grupo} · ${r.equipos} equipos y ${r.jugadores} jugadores.`, "ok");
       pintar(cont);
     } else {
       d.close();
@@ -135,7 +135,7 @@ async function importar(file, cont) {
   } catch (e) {
     console.error(e);
     d.close();
-    dialogo("No se pudo importar", h("div", null, h("p", { text: e.message }), h("p", { class: "sub", text: "Comprueba que es el archivo que exporta FEBstats en «Llevar los datos al iPad»." })));
+    dialogo("No se pudo importar", h("div", null, h("p", { text: e.message }), h("p", { class: "sub", text: "Comprueba que es el archivo que exporta FEBstats en «Llevar equipos y jugadores a Directo»." })));
   }
 }
 
