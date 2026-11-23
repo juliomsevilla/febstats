@@ -68,7 +68,7 @@ const mensajeError = (e) => (String(e).includes("NO_NAVEGADOR") ? "No se encontr
 
 async function descargar(root, args) {
   D.activo = true; D.tUltimo = Date.now(); D.resumen = null; D.error = ""; D.log = []; D.progreso = { fase: "buscando", actual: 0, total: 0 }; pintar(root);
-  try { D.resumen = await invoke("descargar_grupo", args); S.grupos = await invoke("listar_grupos"); D.fuentes = await invoke("listar_fuentes"); }
+  try { D.resumen = await invoke("descargar_grupo", args); S.data = null; S.grupos = await invoke("listar_grupos"); D.fuentes = await invoke("listar_fuentes"); }
   catch (e) { D.error = mensajeError(e); }
   D.activo = false; pintar(root);
 }
@@ -139,7 +139,7 @@ function importar(root) {
   const hacer = async () => {
     const f = await window.__TAURI__.dialog.open({ multiple: true, filters: [{ name: "Base de datos de un grupo", extensions: ["db"] }] });
     if (!f) return; msg.textContent = "Importando…";
-    try { const out = []; for (const r of [].concat(f)) out.push(await invoke("importar_db", { ruta: r })); await vistaDatos(root); root.append(h("p", { class: "dat-ok", text: "Importado: " + out.join(" ") })); }
+    try { const out = []; for (const r of [].concat(f)) out.push(await invoke("importar_db", { ruta: r })); S.data = null; await vistaDatos(root); root.append(h("p", { class: "dat-ok", text: "Importado: " + out.join(" ") })); }
     catch (e) { msg.textContent = String(e); }
   };
   return h("div", { class: "card" }, h("h2", { text: "Importar datos que ya tengo" }),
