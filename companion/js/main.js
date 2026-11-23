@@ -1,6 +1,6 @@
 // Arranque, enrutado por hash y barra superior con los filtros globales.
 import { h, s, icono, vacioMsg, tip } from "./util.js";
-import { S, leerHash, hashDe, normalizar, ir, indexar, equipoEnFoco, partidosDeEquipo, nombreDeKey, jugadorKey } from "./state.js";
+import { S, leerHash, hashDe, normalizar, ir, fijarCompleto, aplicarAmbito, grupoDeEquipo, equipoEnFoco, partidosDeEquipo, nombreDeKey, jugadorKey } from "./state.js";
 import { vistaEquipo } from "./views/equipo.js";
 import { vistaJugadores } from "./views/jugadores.js";
 import { vistaPartidos } from "./views/partidos.js";
@@ -10,18 +10,22 @@ import { vistaAjustes } from "./views/ajustes.js";
 import { vistaIA } from "./views/ia.js";
 import { enEscritorio, enLocal, conVideo, invoke, MODO } from "./api.js";
 import { vistaConsulta } from "./views/consulta.js";
+import { vistaScouting } from "./views/scouting.js";
 import { vistaNotas } from "./views/notas.js";
 import { vistaPlaybook } from "./views/jugadas.js";
 import { chipRelacionado } from "./views/relacionado.js";
 import { contextoActual } from "./views/vinculo.js";
 import { activarExportacion } from "./exportar-auto.js";
 
+// Vistas de datos (estadísticas); el resto del menú son herramientas de trabajo.
+const ESTADISTICAS = ["consulta", "equipo", "jugadores", "partidos", "tiros"];
 const VISTAS = [
   ["equipo", "Equipo", vistaEquipo], ["jugadores", "Jugadores", vistaJugadores],
   ["partidos", "Partidos", vistaPartidos], ["tiros", "Mapas", vistaTiros],
 ];
 if (enEscritorio) {
-  VISTAS.unshift(["consulta", "Consulta", vistaConsulta]);        // buscador rápido para el banquillo
+  if (MODO !== "nativo") VISTAS.unshift(["consulta", "Consulta", vistaConsulta]); // buscador rápido para el banquillo (iPad); en el Mac lo cubren Equipo, Jugadores y Scouting
+  if (MODO === "nativo" || MODO === "remoto") VISTAS.splice(VISTAS.findIndex(([id]) => id === "tiros") + 1, 0, ["scouting", "Scouting", vistaScouting]); // debajo de Mapas: jugadores de todas las categorías descargadas
   if (conVideo) VISTAS.push(["video", "Vídeo", vistaVideo]);      // el iPad no gestiona vídeo ni capturas
   VISTAS.push(["playbook", "Playbook", vistaPlaybook]);                 // diseñador de jugadas (en el iPad, solo visor)
   VISTAS.push(["notas", "Notas", vistaNotas]);                  // notas Markdown (en el iPad, solo lectura)
@@ -75,11 +79,10 @@ async function cargarGrupos() {
 }
 async function cargar(db) {
   // Con el servidor local: /api/payload. En la web publicada (estática): data/<temporada>.json.
-  if (enEscritorio) { S.data = await invoke("leer_payload", { db }); S.idx = indexar(S.data); S.db = db; return; }
+  if (enEscritorio) { fijarCompleto(await invoke("leer_payload", { db })); S.db = db; return; }
   const r = await fetch(S.estatico ? `data/${db.replace(/\.db$/, "")}.json` : `/api/payload?db=${encodeURIComponent(db)}`);
   if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `Error ${r.status}`);
-  S.data = await r.json();
-  S.idx = indexar(S.data);
+  fijarCompleto(await r.json());
   S.db = db;
 }
 
@@ -88,9 +91,11 @@ function pintarNav(view, db) {
   const nav = $("nav");
   nav.replaceChildren(
     h("div", { class: "marca" }, logo(), h("b", { text: "FEBstats" })),
-    ...VISTAS.filter(([id]) => id !== "ajustes").map(([id, nombre]) => {
-      const a = h("a", { href: hashDe({ view: id, db, f: leerHash().f }), "aria-current": id === view ? "page" : null }, icono(id), h("span", { class: "t", text: nombre }));
-      return a;
+    ...VISTAS.filter(([id]) => id !== "ajustes").flatMap(([id, nombre], i, lista) => {
+      const herramienta = !ESTADISTICAS.includes(id);
+      const a = h("a", { href: hashDe({ view: id, db, f: leerHash().f }), class: herramienta ? "herr" : null, "aria-current": id === view ? "page" : null }, icono(id), h("span", { class: "t", text: nombre }));
+      // separador al pasar de las vistas estadísticas a las herramientas
+      return herramienta && (i === 0 || ESTADISTICAS.includes(lista[i - 1][0])) ? [h("div", { class: "nav-sep", role: "separator" }, h("span", { class: "t", text: "Herramientas" })), a] : [a];
     }),
     h("div", { class: "grow" }),
     ...(VISTAS.some(([id]) => id === "ajustes") ? [h("a", { href: "#/ajustes", "aria-current": view === "ajustes" ? "page" : null }, icono("ajustes"), h("span", { class: "t", text: "Ajustes" }))] : []),
@@ -105,7 +110,7 @@ function selector(id, etiqueta, opciones, valor, onCambio) {
 }
 
 function pintarTop(f) {
-  const D = S.data, top = $("top");
+  const D = S.data, top = $("top"), cat = !!S.completo?.es_categoria;
   const foco = equipoEnFoco(f);
   const jugadores = D.jugadores.filter((j) => !foco || j.equipo === foco)
     .sort((a, b) => a.jugador.localeCompare(b.jugador, "es")).map((j) => [jugadorKey(j.jugador, j.equipo), foco ? j.jugador : `${j.jugador} (${j.equipo})`]);
@@ -113,10 +118,12 @@ function pintarTop(f) {
     : D.partidos.slice().sort((a, b) => (b.fecha || "").localeCompare(a.fecha || "")).map((p) => [p.partido_id, `${p.equipo_local} – ${p.equipo_visitante}`]));
   const hay = f.eq || f.ju || f.pa;
   top.replaceChildren(
-    h("div", { class: "contexto" }, h("b", { text: `${D.competicion} · ${D.grupo.replace(/"/g, "")}` }), h("span", { text: `Temporada ${D.temporada}` })),
+    h("div", { class: "contexto" }, h("b", { text: `${D.competicion} · ${cat && !f.gr ? "Toda la categoría" : D.grupo.replace(/"/g, "")}` }), h("span", { text: `Temporada ${D.temporada}${cat ? ` · ${S.completo.grupos.length} grupos` : ""}` })),
     h("div", { class: "filtros" },
-      S.grupos.length > 1 ? selector("f-db", "Temporada", S.grupos.map((g) => [g.db, `${g.temporada} · ${g.grupo.replace(/"/g, "")}`]), S.db, (v) => ir({ db: v, f: { eq: "", ju: "", pa: "" } })) : null,
-      selector("f-eq", "Equipo", [["", "Todos"], ...D.equipos.map((e) => [e, e])], f.eq || foco, (v) => ir({ f: { eq: v, ju: "", pa: "" } })),
+      S.grupos.length + S.categorias.length > 1 ? selector("f-db", "Temporada", [...S.grupos.map((g) => [g.db, `${g.temporada} · ${g.grupo.replace(/"/g, "")}`]),
+        ...S.categorias.map((c) => [c.db, `${c.temporada} · Toda la categoría (${c.competicion}, ${c.grupos} grupos)`])], S.db, (v) => ir({ db: v, f: { gr: "", eq: "", ju: "", pa: "" } })) : null,
+      cat ? selector("f-gr", "Grupo", [["", "Todos los grupos"], ...S.completo.grupos.map((g) => [g, g.replace(/"/g, "")])], f.gr, (v) => ir({ f: { gr: v } })) : null,
+      selector("f-eq", "Equipo", [["", "Todos"], ...D.equipos.map((e) => [e, cat && !f.gr ? `${e} · ${grupoDeEquipo(e).replace(/"/g, "")}` : e])], f.eq || foco, (v) => ir({ f: { eq: v, ju: "", pa: "" } })),
       selector("f-ju", "Jugador", [["", "Todos"], ...jugadores], f.ju, (v) => ir({ f: { ju: v } })),
       selector("f-pa", "Partido", [["", "Todos"], ...partidos], f.pa, (v) => ir({ f: { pa: v } })),
       hay ? h("button", { type: "button", class: "btn fantasma", onclick: () => ir({ f: { eq: "", ju: "", pa: "" } }) }, "Quitar filtros") : null));
@@ -133,7 +140,7 @@ async function render() {
   const main = $("vista");
   main.classList.toggle("ancho", hash.view === "notas" || hash.view === "playbook" || hash.view === "video"); // estas pantallas usan todo el ancho de la ventana
   try {
-    if (["consulta", "video", "ajustes", "ia", "notas", "playbook"].includes(hash.view) && VISTAS.some((x) => x[0] === hash.view)) { // no dependen de ningún grupo de datos FEB
+    if (["consulta", "scouting", "video", "ajustes", "ia", "notas", "playbook"].includes(hash.view) && VISTAS.some((x) => x[0] === hash.view)) { // no dependen de ningún grupo de datos FEB
       const v = VISTAS.find((x) => x[0] === hash.view);
       document.title = `${v[1]} · FEBstats`; pintarNav(v[0], hash.db || ""); $("top").replaceChildren(); $("top").style.display = "none";
       await v[2](main); S._previa = v[0]; return;
@@ -141,6 +148,7 @@ async function render() {
     if (window.__quitarAtajos) window.__quitarAtajos();
     $("top").style.display = "";
     if (!S.grupos.length) S.grupos = await cargarGrupos();
+    if (!S.categorias) { try { S.categorias = (MODO === "nativo" || MODO === "remoto") ? (await invoke("listar_categorias")).filter((c) => c.grupos > 1) : []; } catch { S.categorias = []; } }
     let db = hash.db;
     if (!db) {
       if (!S.grupos.length) { pintarNav(hash.view, ""); $("top").replaceChildren(); main.replaceChildren(vacioMsg(enEscritorio ? "Aún no hay datos" : "No hay ninguna base de datos", enLocal ? "Importa tu archivo de datos en Ajustes → Datos." : enEscritorio ? "Ve a Ajustes → Descarga de datos para bajar los de la FEB, o importa un .db que ya tengas." : "Genera una con: python -m feb_scraper.dashboard <url> --grupo …  (archivo .db en la raíz del proyecto).")); return; }
@@ -150,6 +158,7 @@ async function render() {
     }
     if (db !== S.db || !S.data) { main.replaceChildren(vacioMsg("Cargando datos…")); await cargar(db); }
     if (yo !== cargando) return;
+    aplicarAmbito(hash.f.gr);
     const f = normalizar(hash.f);
     if (JSON.stringify(f) !== JSON.stringify(hash.f)) { location.replace(hashDe({ view: hash.view, db, f })); return; }
     const vista = VISTAS.find((v) => v[0] === hash.view) || VISTAS[0];

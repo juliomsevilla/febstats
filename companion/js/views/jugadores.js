@@ -42,6 +42,9 @@ const COLS_BOX = [
   T("tl", "TL", { par: ["tl_aciertos", "tl_intentos"], num: true, val: (r) => r.tl_aciertos, render: (r) => fr(r.tl_aciertos, r.tl_intentos) }),
 ];
 
+/** Columnas de las pestañas de jugadores, reutilizadas por Scouting (mismas filas: jugador de temporada con sus métricas). */
+export const COLS_JUGADOR = { temporada: COLS_TEMP, tiro: COLS_TIRO, uso: COLS_USO, indice: COLS_IDX };
+
 export function vistaJugadores(root, f) {
   const foco = equipoEnFoco(f), rerender = () => vistaJugadores(root, f);
   const norm = (t) => t.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();

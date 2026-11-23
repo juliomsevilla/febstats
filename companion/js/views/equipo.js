@@ -1,6 +1,6 @@
 // Vista "Equipo": KPIs, racha, resultados, progresión y clasificación.
 import { h, f0, f1, f2, fsigno, fpct, kpi, tabla, vacioMsg, minutos, fechaCorta, tabsBar, conAyuda } from "../util.js";
-import { S, ir, equipoEnFoco, partidosDeEquipo, nombreDeKey, equipoDeKey } from "../state.js";
+import { S, ir, equipoEnFoco, partidosDeEquipo, nombreDeKey, equipoDeKey, grupoDeEquipo } from "../state.js";
 import { AYUDA } from "../ayuda.js";
 import { REGLAS } from "../reglas.js";
 import { lineChart } from "../charts/line.js";
@@ -104,14 +104,22 @@ function panelClasificacion(f, foco, rerender) {
   if (V.tabCl === "info") return card.append(explicacionEquipo()), card;
   if (V.tabCl === "reglas") return card.append(panelReglas()), card;
   const [clave, orden, nombre] = V.tabCl === "ataque" ? ["ordenAD", V.ordenAD, "ataque_defensa"] : V.tabCl === "tiro" ? ["ordenTiro", V.ordenTiro, "tiro"] : ["orden", V.orden, "clasificacion"];
-  const cols = COLS_CL[V.tabCl];
-  card.append(h("h2", { text: V.tabCl === "general" ? "Clasificación" : TABS_CL.find(([k]) => k === V.tabCl)[1] }, h("span", { class: "sub", text: "clic en un equipo para ver su detalle" }),
-    h("div", { class: "acciones" }, botonCSV({ cols, filas: D.clasificacion, orden, nombre: nombreArchivo(nombre, D.grupo, D.temporada) }))),
+  // En una categoría con varios grupos cada grupo tiene su propia clasificación: con un equipo en foco se muestra la de su grupo; sin él, todas con una columna «Grupo».
+  const enCat = !!S.completo?.es_categoria && !D.ambito_grupo, gFoco = foco ? grupoDeEquipo(foco) : "";
+  const filas = enCat && foco ? D.clasificacion.filter((c) => c.grupo === gFoco) : D.clasificacion;
+  const base = D.no_oficial ? COLS_CL[V.tabCl].filter((c) => c.key !== "posicion" && c.key !== "ptos") : COLS_CL[V.tabCl]; // partidos de Directo: no hay puestos ni puntos de clasificación
+  const cols = enCat && !foco ? [{ key: "grupo", label: "Grupo" }, ...base] : base;
+  const ordenOK = cols.some((c) => c.key === orden.col) ? orden : { col: "pg", dir: -1 }; // sin la columna «#» (partidos de Directo) se ordena por victorias
+  const nombreTabla = V.tabCl === "general" ? (D.no_oficial ? "Balance de partidos de Directo" : "Clasificación") : TABS_CL.find(([k]) => k === V.tabCl)[1];
+  card.append(h("h2", { text: enCat && foco ? `${nombreTabla} · ${gFoco.replace(/"/g, "")}` : nombreTabla }, h("span", { class: "sub", text: "clic en un equipo para ver su detalle" }),
+    h("div", { class: "acciones" }, botonCSV({ cols, filas, orden: ordenOK, nombre: nombreArchivo(nombre, enCat && foco ? gFoco : D.grupo, D.temporada) }))),
     tabla({
-      cols, filas: D.clasificacion, orden, onOrden: (o) => { V[clave] = o; rerender(); },
+      cols, filas, orden: ordenOK, onOrden: (o) => { V[clave] = o; rerender(); },
       claseFila: (r) => (r.equipo === foco ? "sel" : ""),
       onFila: (r) => ir({ f: { eq: r.equipo === foco ? "" : r.equipo, ju: "", pa: "" } }),
     }));
+  if (D.no_oficial) card.append(h("p", { class: "nota-kpi", text: "Partidos registrados con FEBstats Directo: no son oficiales y no entran en ninguna clasificación ni en los índices de los grupos de la FEB. Los índices y percentiles de aquí se calculan solo entre estos partidos." }));
+  if (enCat && foco) card.append(h("p", { class: "nota-kpi", text: "Es la clasificación de su grupo. Los índices de jugadores, los radares y los mapas de tiro comparan con toda la categoría; para ver solo un grupo, elige «Grupo» arriba." }));
   if (D.clasificacion.some((c) => c.ortg == null) && V.tabCl !== "general") card.append(h("p", { class: "nota-kpi", text: "Los equipos sin box score del rival en algún partido no tienen ataque/defensa calculados." }));
   return card;
 }

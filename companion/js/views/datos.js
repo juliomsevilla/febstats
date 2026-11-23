@@ -66,9 +66,9 @@ async function cargarOpciones(root, comp, temporada) {
 }
 const mensajeError = (e) => (String(e).includes("NO_NAVEGADOR") ? "No se encontró Chrome, Edge ni Chromium. Pulsa «Instalar navegador»." : String(e));
 
-async function descargar(root, args) {
+async function descargar(root, args, comando = "descargar_grupo") {
   D.activo = true; D.tUltimo = Date.now(); D.resumen = null; D.error = ""; D.log = []; D.progreso = { fase: "buscando", actual: 0, total: 0 }; pintar(root);
-  try { D.resumen = await invoke("descargar_grupo", args); S.data = null; S.grupos = await invoke("listar_grupos"); D.fuentes = await invoke("listar_fuentes"); }
+  try { D.resumen = await invoke(comando, args); S.data = null; S.categorias = null; S.grupos = await invoke("listar_grupos"); D.fuentes = await invoke("listar_fuentes"); }
   catch (e) { D.error = mensajeError(e); }
   D.activo = false; pintar(root);
 }
@@ -91,10 +91,16 @@ function pintar(root) {
       h("label", null, "Temporada", sel(D.temporadas.map(([t, v]) => [v, t]), D.temporada, (v) => { D.temporada = v; cargarOpciones(root, D.comp, v); }, { disabled: D.activo || D.cargando || !D.temporadas.length || null })),
       h("label", null, "Grupo / división", sel(D.grupos.map(([t, v]) => [v, t.replace(/"/g, "")]), D.grupo, (v) => { D.grupo = v; }, { disabled: D.activo || D.cargando || !D.grupos.length || null })),
       h("button", { type: "button", class: "btn primario", disabled: D.activo || D.cargando || !D.grupo || !D.navegador || null,
-        onclick: () => descargar(root, { competicionId: idComp(D.comp), slug: D.comp, temporada: D.temporada || null, grupoValor: D.grupo }) }, D.activo ? "Descargando…" : "Descargar / actualizar")),
+        onclick: () => descargar(root, { competicionId: idComp(D.comp), slug: D.comp, temporada: D.temporada || null, grupoValor: D.grupo }) }, D.activo ? "Descargando…" : "Descargar / actualizar"),
+      D.grupos.length > 1 ? h("button", { type: "button", class: "btn", title: "Descarga uno tras otro todos los grupos de esta competición y temporada (solo los partidos que falten) para poder verla entera", disabled: D.activo || D.cargando || !D.navegador || null,
+        onclick: () => descargar(root, { competicionId: idComp(D.comp), slug: D.comp, temporada: D.temporada || null }, "descargar_competicion") }, `Descargar toda la competición (${D.grupos.length} grupos)`) : null),
     D.cargando ? h("p", { class: "vid-ayuda", text: "Consultando feb.es…" }) : null,
     barra,
     D.error ? h("p", { class: "dat-error", text: D.error }) : null,
+    r?.detalle ? h("div", { class: "dat-ok" }, h("b", { text: `${r.competicion} · ${r.temporada}` }),
+      h("p", { text: r.cancelado ? "Descarga cancelada: lo ya guardado se conserva." : `Listo: ${r.completos} de ${r.grupos} grupos completos${r.con_fallos ? `, ${r.con_fallos} con partidos pendientes o sin partidos jugados` : ""}.` }),
+      r.detalle.filter((x) => x.error || x.fallos?.length).map((x) => h("p", { class: "dat-error", text: x.error ? `${x.grupo}: ${x.error}` : `${x.grupo}: ${x.fallos.length} partido(s) sin descargar; vuelve a pulsar el botón para reintentarlos.` })),
+      h("a", { class: "btn primario", href: "#/equipo" }, "Ver los datos")) :
     r ? h("div", { class: "dat-ok" }, h("b", { text: `${r.competicion} · ${r.grupo} · ${r.temporada}` }),
       h("p", { text: r.cancelado ? "Descarga cancelada: lo ya guardado se conserva." : `Listo: ${r.nuevos} partido(s) nuevo(s) de ${r.partidos} (${r.equipos} equipos, ${r.tiros} tiros).` }),
       r.fallos.length ? h("p", { class: "dat-error", text: `${r.fallos.length} partido(s) no se pudieron descargar; vuelve a pulsar «Descargar» para reintentarlos.` }) : null,
@@ -112,7 +118,7 @@ function pintar(root) {
             f ? h("button", { type: "button", class: "btn", disabled: D.activo || !D.navegador || null, onclick: () => descargar(root, { competicionId: f.competicion_id, slug: f.slug, temporada: f.temporada_valor, grupoValor: f.grupo_valor }) }, "Actualizar")
               : h("span", { class: "vid-ayuda", title: "Descárgalo una vez desde el formulario de arriba (no repite los partidos que ya tiene) y quedará con botón «Actualizar»", text: "sin origen" })));
       }))) : vacioMsg("Aún no has descargado nada", "Elige competición, temporada y grupo arriba. Cada vez que se jueguen partidos nuevos, pulsa «Actualizar»: solo se descargan los nuevos."));
-  root.replaceChildren(nuevo, lista, ...(MODO === "nativo" ? [importar(root), exportar(root)] : []));
+  root.replaceChildren(nuevo, lista, ...(MODO === "nativo" ? [importar(root), exportar(root), exportarDirecto(root)] : []));
   const lg = root.querySelector(".dat-log"); if (lg) lg.scrollTop = lg.scrollHeight;
 }
 
@@ -133,13 +139,31 @@ function exportar(root) {
     h("div", { class: "vid-herr" }, h("button", { type: "button", class: "btn primario", onclick: hacer }, "Exportar datos para iPad…")), msg);
 }
 
+// «Llevar equipos y jugadores a Directo»: archivo pequeño con solo equipos y jugadores (sin partidos), para no cargarlos a mano en Directo.
+let _selD = null;
+function exportarDirecto(root) {
+  const oficiales = S.grupos.filter((g) => g.competicion !== "FEBstats Directo");
+  _selD ||= new Set(oficiales.map((g) => g.db));
+  const msg = h("p", { class: "vid-ayuda" });
+  const hacer = async () => {
+    if (!_selD.size) { msg.textContent = "Elige al menos un grupo."; return; }
+    const ruta = await window.__TAURI__.dialog.save({ defaultPath: "FEBstats-plantillas.json", filters: [{ name: "Equipos y jugadores para Directo", extensions: ["json"] }] });
+    if (!ruta) return; msg.textContent = "Generando…";
+    try { msg.textContent = await invoke("exportar_plantillas", { ruta, dbs: [..._selD] }); } catch (e) { msg.textContent = String(e); }
+  };
+  return h("div", { class: "card" }, h("h2", { text: "Llevar equipos y jugadores a Directo" }),
+    h("p", { class: "vid-ayuda", text: "Genera un archivo pequeño con los equipos y sus jugadores (nombre, dorsal e identificador de la FEB) de los grupos que elijas, sin ningún partido. Se carga en FEBstats Directo (Inicio → Importar datos) para no tener que escribirlos a mano; allí puedes añadir jugadores nuevos. Los partidos que registres en Directo vuelven aquí con «Importar datos que ya tengo» y se guardan aparte, como partidos no oficiales." }),
+    h("div", { class: "con-lista" }, oficiales.map((g) => h("label", { class: "ia-breve" }, h("input", { type: "checkbox", checked: _selD.has(g.db) || null, onchange: (e) => { e.target.checked ? _selD.add(g.db) : _selD.delete(g.db); } }), ` ${g.temporada} · ${g.competicion} ${String(g.grupo).replace(/"/g, "")}`))),
+    h("div", { class: "vid-herr" }, h("button", { type: "button", class: "btn primario", onclick: hacer }, "Exportar equipos y jugadores para Directo…")), msg);
+}
+
 // Importar un .db que ya tengas (p. ej. generado antes con el scraper de Python o copiado de otro Mac).
 function importar(root) {
   const msg = h("p", { class: "vid-ayuda" });
   const hacer = async () => {
     const f = await window.__TAURI__.dialog.open({ multiple: true, filters: [{ name: "Base de datos de un grupo", extensions: ["db"] }] });
     if (!f) return; msg.textContent = "Importando…";
-    try { const out = []; for (const r of [].concat(f)) out.push(await invoke("importar_db", { ruta: r })); S.data = null; await vistaDatos(root); root.append(h("p", { class: "dat-ok", text: "Importado: " + out.join(" ") })); }
+    try { const out = []; for (const r of [].concat(f)) out.push(await invoke("importar_db", { ruta: r })); S.data = null; S.categorias = null; await vistaDatos(root); root.append(h("p", { class: "dat-ok", text: "Importado: " + out.join(" ") })); }
     catch (e) { msg.textContent = String(e); }
   };
   return h("div", { class: "card" }, h("h2", { text: "Importar datos que ya tengo" }),
