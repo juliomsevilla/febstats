@@ -158,7 +158,8 @@ function iaGuardada() { // formato nuevo (proveedor + una clave y un modelo por 
   return { proveedor: id, proveedores: provs, instrucciones: raw.instrucciones || "" };
 }
 const guardarCfgIA = (c) => { try { localStorage.setItem("feb-ia", JSON.stringify(c)); } catch { /* sin almacenamiento: solo esta sesión */ } };
-const cfgDe = (ia, id) => { const def = PROVEEDORES[id] || PROVEEDORES.deepseek; const p = ia.proveedores?.[id] || {}; return { proveedor: PROVEEDORES[id] ? id : "deepseek", base_url: def.base_url, modelo: (p.modelo || "").trim() || def.modelo, api_key: limpiarClave(p.api_key), instrucciones: ia.instrucciones || "" }; };
+const entre = (v, a, b, def) => { const n = Math.round(Number(v)); return Number.isFinite(n) && v !== "" && v != null ? Math.min(b, Math.max(a, n)) : def; };
+const cfgDe = (ia, id) => { const def = PROVEEDORES[id] || PROVEEDORES.deepseek; const p = ia.proveedores?.[id] || {}; return { proveedor: PROVEEDORES[id] ? id : "deepseek", base_url: def.base_url, modelo: (p.modelo || "").trim() || def.modelo, api_key: limpiarClave(p.api_key), instrucciones: ia.instrucciones || "", memoria: entre(ia.memoria, 0, 50, 10), max_tokens: entre(ia.max_tokens, 100, 16000, 1500), longitud: ["breve", "profunda"].includes(ia.longitud) ? ia.longitud : "normal" }; };
 const cfgIA = () => { const ia = iaGuardada(); return cfgDe(ia, ia.proveedor); };
 const cabecerasIA = (c, clave = c.api_key) => ({ "content-type": "application/json", authorization: `Bearer ${clave}`, ...(c.base_url.includes("openrouter.ai") ? { "X-Title": "FEBstats" } : {}) });
 async function errorHttp(r) { let d = ""; try { const j = await r.json(); d = j?.error?.message || j?.error || j?.message || ""; } catch { /* sin detalle */ } return `Error ${r.status} del servicio de IA${d ? `: ${String(d).slice(0, 200)}` : "."}`; }
@@ -358,7 +359,7 @@ async function ronda(cfg, msgs, chatId) {
   let r;
   try {
     r = await fetch(`${cfg.base_url.replace(/\/$/, "")}/chat/completions`, { method: "POST", headers: cabecerasIA(cfg),
-      body: JSON.stringify({ model: cfg.modelo, messages: msgs, tools: HERRAMIENTAS.map((f) => ({ type: "function", function: f })), stream: true, temperature: 0.3 }) });
+      body: JSON.stringify({ model: cfg.modelo, messages: msgs, tools: HERRAMIENTAS.map((f) => ({ type: "function", function: f })), stream: true, temperature: 0.3, max_tokens: cfg.max_tokens }) });
   } catch { throw "Sin conexión con el servicio de IA. Comprueba Internet; los datos siguen disponibles sin IA."; }
   if (!r.ok) { const c = r.status, m = await errorHttp(r); throw c === 401 ? `${m}. Revisa la clave en «Ajustes → IA».` : c === 402 ? `${m}. Puede que la cuenta no tenga saldo.` : c === 429 ? `${m}. Espera unos segundos.` : m; }
   const rd = r.body.getReader(); const dec = new TextDecoder(); let buf = "", contenido = ""; const llamadas = [];
@@ -380,15 +381,17 @@ async function ronda(cfg, msgs, chatId) {
   return [contenido, llamadas.filter((l) => l && l.name)];
 }
 
-async function preguntar({ chatId, texto, contexto, breve }) {
+const LONGITUD_TXT = { breve: " LONGITUD DE LA RESPUESTA: BREVE. Máximo unas 80 palabras, directo al grano, sin introducción ni despedida; solo lo esencial y alguna cifra clave.", profunda: " LONGITUD DE LA RESPUESTA: EN PROFUNDIDAD. Análisis detallado y bien estructurado (secciones o viñetas), con los datos que lo apoyen, matices, posibles causas y un plan de acción concreto." };
+async function preguntar({ chatId, texto, contexto, breve, longitud }) {
   const cfg = cfgIA();
   try {
     if (!cfg.api_key) throw "Falta la clave de la API de IA. Ve a Ajustes → IA y pégala (DeepSeek u OpenRouter).";
-    const hist = (await porChat(chatId)).sort((a, b) => a.id - b.id).slice(-10);
-    if (!hist.length) { const c = await get("chats", chatId); if (c) await put("chats", { ...c, titulo: texto.slice(0, 48) }); }
+    const todos_ = (await porChat(chatId)).sort((a, b) => a.id - b.id); const hist = cfg.memoria ? todos_.slice(-cfg.memoria) : [];
+    if (!todos_.length) { const c = await get("chats", chatId); if (c) await put("chats", { ...c, titulo: texto.slice(0, 48) }); }
     await put("mensajes", { chat_id: chatId, rol: "user", contenido: texto, creado: new Date().toISOString() });
     let sis = SISTEMA; if ((cfg.instrucciones || "").trim()) sis += `\n\nPERFIL E INSTRUCCIONES DEL ENTRENADOR (síguelas; prevalecen sobre tu estilo por defecto, pero nunca inventes datos):\n${cfg.instrucciones.trim()}`;
-    if (breve) sis += " MODO PARTIDO: el entrenador está en pleno partido; responde en MÁXIMO 3 frases cortas o 4 viñetas, lo más accionable primero.";
+    if (breve) sis += " MODO PARTIDO: el entrenador está en pleno partido; responde en MÁXIMO 3 frases cortas o 4 viñetas, lo más accionable primero."; // el modo partido va por su cuenta
+    else sis += LONGITUD_TXT[longitud || cfg.longitud] || "";
     if (contexto && Object.keys(contexto).length) sis += ` Contexto actual del entrenador en la aplicación: ${JSON.stringify(contexto)}.`;
     const msgs = [{ role: "system", content: sis }, ...hist.map((m) => ({ role: m.rol, content: m.contenido })), { role: "user", content: texto }];
     let respuesta = ""; const graficos = [];
@@ -430,11 +433,13 @@ const ordenes = {
   borrar_chat: async ({ id }) => { for (const m of await porChat(id)) await del("mensajes", m.id); await del("chats", id); return null; },
   listar_mensajes: async ({ chatId }) => (await porChat(chatId)).sort((a, b) => a.id - b.id).map((m) => ({ rol: m.rol, contenido: m.contenido })),
   preguntar_ia: preguntar,
-  leer_ajustes_ia: async () => { const ia = iaGuardada(), c = cfgIA(); const provs = {}; for (const [id, p] of Object.entries(PROVEEDORES)) { const x = cfgDe(ia, id); provs[id] = { nombre: p.nombre, base_url: p.base_url, modelo: x.modelo, tiene_clave: !!x.api_key }; } return { proveedor: c.proveedor, base_url: c.base_url, modelo: c.modelo, tiene_clave: !!c.api_key, instrucciones: c.instrucciones, proveedores: provs }; },
-  guardar_ajustes_ia: async ({ proveedor, modelos, claves, instrucciones }) => {
+  leer_ajustes_ia: async () => { const ia = iaGuardada(), c = cfgIA(); const provs = {}; for (const [id, p] of Object.entries(PROVEEDORES)) { const x = cfgDe(ia, id); provs[id] = { nombre: p.nombre, base_url: p.base_url, modelo: x.modelo, tiene_clave: !!x.api_key }; } return { proveedor: c.proveedor, base_url: c.base_url, modelo: c.modelo, tiene_clave: !!c.api_key, instrucciones: c.instrucciones, memoria: c.memoria, max_tokens: c.max_tokens, longitud: c.longitud, proveedores: provs }; },
+  guardar_ajustes_ia: async ({ proveedor, modelos, claves, instrucciones, memoria, max_tokens, longitud }) => {
     const ia = iaGuardada(); ia.proveedor = PROVEEDORES[proveedor] ? proveedor : "deepseek";
     for (const id of Object.keys(PROVEEDORES)) { ia.proveedores[id] ||= { api_key: "", modelo: "" }; if (modelos && typeof modelos[id] === "string") ia.proveedores[id].modelo = modelos[id].trim(); const k = limpiarClave(claves && claves[id]); if (k) ia.proveedores[id].api_key = k; }
-    if (instrucciones != null) ia.instrucciones = String(instrucciones).slice(0, 4000); guardarCfgIA(ia); return null;
+    if (instrucciones != null) ia.instrucciones = String(instrucciones).slice(0, 4000);
+    if (memoria != null) ia.memoria = entre(memoria, 0, 50, 10); if (max_tokens != null) ia.max_tokens = entre(max_tokens, 100, 16000, 1500); if (longitud != null) ia.longitud = ["breve", "profunda"].includes(longitud) ? longitud : "normal";
+    guardarCfgIA(ia); return null;
   },
   elegir_proveedor_ia: async ({ proveedor }) => { const ia = iaGuardada(); ia.proveedor = PROVEEDORES[proveedor] ? proveedor : "deepseek"; guardarCfgIA(ia); return null; },
   elegir_modelo_ia: async ({ modelo }) => { const ia = iaGuardada(); ia.proveedores[ia.proveedor] ||= { api_key: "", modelo: "" }; ia.proveedores[ia.proveedor].modelo = String(modelo).trim(); guardarCfgIA(ia); return null; },

@@ -6,7 +6,7 @@ import { S } from "../state.js";
 import { hidratar } from "../graficos.js";
 import { md } from "../md.js";
 
-const A = { chats: [], chat: null, mensajes: [], grupos: [], grupo: "", equipos: [], equipo: "", jugadores: [], jugador: "", breve: false, modelo: "", modelos: [], ocupado: false, adjuntos: [], parcial: "", herr: "", escuchando: false, error: "" };
+const A = { chats: [], chat: null, mensajes: [], grupos: [], grupo: "", equipos: [], equipo: "", jugadores: [], jugador: "", breve: false, longitud: "normal", modelo: "", modelos: [], ocupado: false, adjuntos: [], parcial: "", herr: "", escuchando: false, error: "" };
 try { const b = localStorage.getItem("ia-breve"); A.breve = b === null ? enLocal : b === "1"; } catch { /* sin almacenamiento */ } // en el iPad: respuestas breves por defecto
 
 async function escuchar(root) {
@@ -24,7 +24,7 @@ export async function vistaIA(root) {
   await escuchar(root);
   A.chats = await invoke("listar_chats");
   A.grupos = await invoke("listar_grupos");
-  const aj = await invoke("leer_ajustes_ia"); A.modelo = aj.modelo; if (A.proveedor !== aj.proveedor) { A.proveedor = aj.proveedor; A.modelos = []; } A.nombreProveedor = aj.proveedores?.[aj.proveedor]?.nombre || ""; A.proveedores = aj.proveedores;
+  const aj = await invoke("leer_ajustes_ia"); A.modelo = aj.modelo; if (A.proveedor !== aj.proveedor) { A.proveedor = aj.proveedor; A.modelos = []; } A.nombreProveedor = aj.proveedores?.[aj.proveedor]?.nombre || ""; A.proveedores = aj.proveedores; if (!A.longitudElegida) A.longitud = aj.longitud || "normal";
   if (aj.tiene_clave && !A.modelos.length) invoke("listar_modelos_ia", {}).then((m) => { A.modelos = m; if (document.querySelector(".ia-root")) pintar(root); }).catch(() => {});
   if (!A.chat || !A.chats.some((c) => c.id === A.chat)) A.chat = A.chats[0]?.id ?? null;
   A.mensajes = A.chat ? await invoke("listar_mensajes", { chatId: A.chat }) : [];
@@ -62,7 +62,7 @@ async function enviar(root, texto) {
   pintar(root);
   const contexto = {}; if (A.grupo) { const g = A.grupos.find((x) => x.db === A.grupo); contexto.grupo = `${g?.competicion} ${g?.grupo} ${g?.temporada}`; contexto.db = A.grupo; }
   if (A.equipo) contexto.equipo = A.equipo; if (A.jugador) contexto.jugador = A.jugador;
-  try { const r = await invoke("preguntar_ia", { chatId: A.chat, texto, contexto, breve: A.breve }); A.mensajes.push({ rol: "assistant", contenido: r }); }
+  try { const r = await invoke("preguntar_ia", { chatId: A.chat, texto, contexto, breve: A.breve, longitud: A.longitud }); A.mensajes.push({ rol: "assistant", contenido: r }); }
   catch (e) { A.error = String(e); }
   A.ocupado = false; A.parcial = ""; A.herr = ""; A.chats = await invoke("listar_chats");
   if (document.querySelector(".ia-root")) pintar(root);
@@ -124,9 +124,13 @@ export async function panelIA(cont) {
     ["Formador de jugadores", "Actúa como entrenador de formación. Evalúa a los jugadores con foco en su desarrollo: qué hacen bien, qué deben mejorar y 2-3 ejercicios o hábitos concretos para trabajarlo. Tono positivo y exigente."],
   ];
   const instr = h("textarea", { rows: 7, placeholder: "Opcional. Escribe cómo quieres que se comporte el asistente (rol, estilo, qué priorizar, formato de las respuestas…)." }, a.instrucciones || "");
+  const memoria = h("input", { type: "number", min: "0", max: "50", step: "1", value: String(a.memoria ?? 10), style: { width: "90px" } });
+  const maxTok = h("input", { type: "number", min: "100", max: "16000", step: "100", value: String(a.max_tokens ?? 1500), style: { width: "110px" } });
+  const longDef = h("select", null, LONGITUDES.map(([v, t]) => h("option", { value: v, selected: v === (a.longitud || "normal") || null, text: t })));
   const guardar = async () => {
     st[prov].clave = clave.value;
-    await invoke("guardar_ajustes_ia", { proveedor: prov, modelos: Object.fromEntries(Object.entries(st).map(([id, x]) => [id, x.modelo])), claves: Object.fromEntries(Object.entries(st).map(([id, x]) => [id, x.clave])), instrucciones: instr.value });
+    await invoke("guardar_ajustes_ia", { proveedor: prov, modelos: Object.fromEntries(Object.entries(st).map(([id, x]) => [id, x.modelo])), claves: Object.fromEntries(Object.entries(st).map(([id, x]) => [id, x.clave])), instrucciones: instr.value, memoria: Number(memoria.value), max_tokens: Number(maxTok.value), longitud: longDef.value });
+    A.longitud = longDef.value; A.longitudElegida = false;
     for (const [id, p] of Object.entries(provs)) { if (st[id].clave) p.tiene_clave = true; p.modelo = st[id].modelo; }
     for (const x of Object.values(st)) x.clave = ""; clave.value = ""; pintarProveedor();
     A.modelo = st[prov].modelo; A.modelos = []; A.proveedor = prov;
@@ -140,6 +144,8 @@ export async function panelIA(cont) {
     h("div", { class: "vid-herr" }, ...PERFILES.map(([n, t]) => h("button", { type: "button", class: "btn", onclick: () => { instr.value = t; } }, n)), h("button", { type: "button", class: "btn fantasma", onclick: () => { instr.value = ""; } }, "Quitar perfil")),
     h("p", { class: "vid-ayuda", text: "Elige un perfil de ejemplo y edítalo, o escribe el tuyo. Se aplica a todas las conversaciones (las nuevas y las ya abiertas) y se guarda en este dispositivo." }),
     h("div", { class: "ia-fila" }, h("label", null, "Modelo", modeloIn, lista), h("button", { type: "button", class: "btn", onclick: cargar }, "Cargar modelos")),
+    h("div", { class: "ia-fila" }, h("label", null, "Mensajes que recuerda", memoria), h("label", null, "Longitud máxima de la respuesta (tokens)", maxTok), h("label", null, "Longitud por defecto", longDef)),
+    h("p", { class: "vid-ayuda", text: "Para gastar menos: «Mensajes que recuerda» es cuántos mensajes anteriores de la conversación se reenvían a la IA (0 = ninguno; por defecto 10). «Longitud máxima» corta la respuesta al llegar a ese tamaño (por defecto 1500; súbelo si vas a pedir informes largos o PDF). La longitud por defecto (Breve, Normal o En profundidad) se puede cambiar en cada mensaje. El modo partido va por su cuenta." }),
     h("p", { class: "vid-ayuda", text: "Pega la clave y pulsa «Cargar modelos» para ver los del servicio, o escribe el nombre a mano." }),
     h("p", { class: "vid-ayuda", text: "Privacidad: a la IA solo se envían textos y cifras que salen de tus datos (estadísticas y tus notas). Nunca el vídeo ni imágenes." }),
     h("div", { class: "vid-herr" }, h("button", { type: "button", class: "btn primario", onclick: async () => { await guardar(); msg.textContent = "Guardado."; } }, "Guardar"),
@@ -158,7 +164,9 @@ function configIA(root) {
     : h("select", { class: "peq", "aria-label": "Modelo", title: "Modelo de IA que responde", onchange: (e) => elegir(e.target.value) },
       (A.modelos.includes(A.modelo) || !A.modelo ? A.modelos : [A.modelo, ...A.modelos]).map((m) => h("option", { value: m, selected: m === A.modelo || null, text: m })),
       !A.modelos.length ? h("option", { value: A.modelo, text: A.modelo || "(sin definir)" }) : null);
-  return h("div", { class: "ia-conf" }, servicio, modelo, h("small", { class: "ia-conf-ayuda", text: "Cambia de servicio o de modelo cuando quieras" }));
+  const longitud = h("select", { class: "peq", "aria-label": "Longitud de la respuesta", title: "Longitud de la respuesta (no afecta al modo partido)", onchange: (e) => { A.longitud = e.target.value; A.longitudElegida = true; } },
+    LONGITUDES.map(([v, t]) => h("option", { value: v, selected: v === A.longitud || null, text: t })));
+  return h("div", { class: "ia-conf" }, servicio, modelo, longitud, h("small", { class: "ia-conf-ayuda", text: "Cambia de servicio o de modelo cuando quieras" }));
 }
 async function cambiarProveedor(root, id) {
   A.error = ""; await invoke("elegir_proveedor_ia", { proveedor: id });
@@ -167,6 +175,8 @@ async function cambiarProveedor(root, id) {
   pintar(root);
   if (aj.tiene_clave) invoke("listar_modelos_ia", {}).then((m) => { A.modelos = m; if (A.proveedor === aj.proveedor && document.querySelector(".ia-root")) pintar(root); }).catch(() => {});
 }
+
+const LONGITUDES = [["breve", "Breve"], ["normal", "Normal"], ["profunda", "En profundidad"]];
 
 function pintar(root) {
   const sel = (ops, val, on, vacio) => h("select", { class: "peq", onchange: (e) => on(e.target.value) }, h("option", { value: "", text: vacio }), ops.map(([v, t]) => h("option", { value: v, selected: v === val || null, text: t })));
