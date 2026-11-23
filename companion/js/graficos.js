@@ -112,6 +112,15 @@ export function renderGrafico(sp) {
   catch { return h("div", { class: "graf", text: "No se pudo dibujar el gráfico." }); }
 }
 /** Sustituye los marcadores `.ia-graf` de un mensaje por su gráfico real. */
+function tarjetaArchivo(a) {
+  const b = (txt, cmd) => { const x = document.createElement("button"); x.type = "button"; x.className = "btn"; x.textContent = txt; x.onclick = async () => { try { await window.__TAURI__.core.invoke(cmd, { ruta: a.ruta }); } catch (e) { x.textContent = String(e); } }; return x; };
+  const d = document.createElement("div"); d.className = "ia-archivo";
+  const t = document.createElement("span"); t.textContent = "📄 " + a.nombre; d.append(t);
+  if (window.__TAURI__?.core) d.append(b("Abrir", "abrir_ruta"), b("Mostrar en carpeta", "mostrar_ruta"));
+  else { const s = document.createElement("small"); s.textContent = a.ruta; d.append(s); }
+  return d;
+}
 export function hidratar(raiz) {
+  for (const el of raiz.querySelectorAll(".ia-arch")) { try { el.replaceChildren(tarjetaArchivo(JSON.parse(el.dataset.spec))); } catch { el.textContent = "(archivo no válido)"; } el.classList.remove("ia-arch"); el.classList.add("ia-arch-ok"); }
   for (const el of raiz.querySelectorAll(".ia-graf")) { try { el.replaceChildren(renderGrafico(JSON.parse(el.dataset.spec))); } catch { el.textContent = "(gráfico no válido)"; } }
 }

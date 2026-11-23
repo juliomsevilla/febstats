@@ -14,7 +14,7 @@ export function md(txt, { blando = false } = {}) {
     const l = L[i];
     if (/^```/.test(l)) {
       const lang = l.slice(3).trim(); const c = []; i++; while (i < L.length && !/^```/.test(L[i])) c.push(L[i++]); i++;
-      out.push(lang === "feb-grafico" ? `<div class="ia-graf" data-spec="${esc(c.join("\n")).replace(/"/g, "&quot;")}"></div>` : `<pre><code>${esc(c.join("\n"))}</code></pre>`); continue;
+      out.push(lang === "feb-grafico" ? `<div class="ia-graf" data-spec="${esc(c.join("\n")).replace(/"/g, "&quot;")}"></div>` : lang === "feb-archivo" ? `<div class="ia-arch" data-spec="${esc(c.join("\n")).replace(/"/g, "&quot;")}"></div>` : `<pre><code>${esc(c.join("\n"))}</code></pre>`); continue;
     }
     if (l.includes("|") && i + 1 < L.length && esSep(L[i + 1])) { // tabla
       const cab = celdas(l); i += 2; const filas = [];

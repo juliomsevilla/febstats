@@ -1,12 +1,12 @@
 // Vista "Asistente" (solo escritorio): chat con IA sobre TODOS los datos descargados (varias divisiones y temporadas)
 // y sobre las notas de vídeo del entrenador. Modo partido: respuestas muy breves para usarlo en directo.
 import { h, vacioMsg, dialogo } from "../util.js";
-import { invoke, escuchar as alEvento, enLocal } from "../api.js";
+import { invoke, escuchar as alEvento, enLocal, MODO } from "../api.js";
 import { S } from "../state.js";
 import { hidratar } from "../graficos.js";
 import { md } from "../md.js";
 
-const A = { chats: [], chat: null, mensajes: [], grupos: [], grupo: "", equipos: [], equipo: "", jugadores: [], jugador: "", breve: false, modelo: "", modelos: [], ocupado: false, parcial: "", herr: "", escuchando: false, error: "" };
+const A = { chats: [], chat: null, mensajes: [], grupos: [], grupo: "", equipos: [], equipo: "", jugadores: [], jugador: "", breve: false, modelo: "", modelos: [], ocupado: false, adjuntos: [], parcial: "", herr: "", escuchando: false, error: "" };
 try { const b = localStorage.getItem("ia-breve"); A.breve = b === null ? enLocal : b === "1"; } catch { /* sin almacenamiento */ } // en el iPad: respuestas breves por defecto
 
 async function escuchar(root) {
@@ -28,11 +28,26 @@ export async function vistaIA(root) {
   if (aj.tiene_clave && !A.modelos.length) invoke("listar_modelos_ia", {}).then((m) => { A.modelos = m; if (document.querySelector(".ia-root")) pintar(root); }).catch(() => {});
   if (!A.chat || !A.chats.some((c) => c.id === A.chat)) A.chat = A.chats[0]?.id ?? null;
   A.mensajes = A.chat ? await invoke("listar_mensajes", { chatId: A.chat }) : [];
+  await cargarAdjuntos();
   pintar(root);
   if (window.__iaPregunta) { const q = window.__iaPregunta; window.__iaPregunta = null; A.breve = true; A.chat = null; A.mensajes = []; enviar(root, q); } // viene de una ficha de Consulta
 }
 
-async function elegirChat(root, id) { A.chat = id; A.parcial = ""; A.error = ""; A.mensajes = await invoke("listar_mensajes", { chatId: id }); pintar(root); }
+async function elegirChat(root, id) { A.chat = id; A.parcial = ""; A.error = ""; A.mensajes = await invoke("listar_mensajes", { chatId: id }); await cargarAdjuntos(); pintar(root); }
+
+// ---- archivos adjuntos (solo en el Mac): la IA lee su texto con la herramienta leer_archivo ----
+const puedeAdjuntar = () => MODO === "nativo" && !!window.__TAURI__?.dialog;
+async function cargarAdjuntos() { A.adjuntos = puedeAdjuntar() && A.chat ? await invoke("ia_adjuntos", { chatId: A.chat }).catch(() => []) : []; }
+async function adjuntar(root) {
+  const sel = await window.__TAURI__.dialog.open({ multiple: true, title: "Adjuntar archivos para el asistente", filters: [{ name: "Documentos", extensions: ["pdf", "docx", "txt", "md", "csv", "tsv", "json", "html", "xml"] }] });
+  if (!sel) return; const rutas = [].concat(sel); if (!rutas.length) return;
+  if (!A.chat) { A.chat = await invoke("crear_chat"); A.chats = await invoke("listar_chats"); }
+  A.error = "";
+  for (const ruta of rutas) { try { await invoke("ia_adjuntar", { chatId: A.chat, ruta }); } catch (e) { A.error = String(e); } }
+  await cargarAdjuntos(); pintar(root);
+}
+async function quitarAdjunto(root, nombre) { await invoke("ia_quitar_adjunto", { chatId: A.chat, nombre }); await cargarAdjuntos(); pintar(root); }
+const chipsAdjuntos = (root) => A.adjuntos.length ? h("div", { class: "ia-adj" }, A.adjuntos.map((a) => h("span", { class: "ia-chip", title: `${a.caracteres.toLocaleString("es-ES")} caracteres de texto` }, "📎 " + a.nombre, h("button", { type: "button", "aria-label": "Quitar " + a.nombre, onclick: () => quitarAdjunto(root, a.nombre) }, "✕")))) : null;
 
 async function cargarEquipos(root) {
   A.equipos = []; A.jugadores = [];
@@ -55,12 +70,20 @@ async function enviar(root, texto) {
 
 function actualizarMensajes() {
   const caja = document.querySelector(".ia-msgs"); if (!caja) return;
-  caja.replaceChildren(...burbujas());
-  caja.scrollTop = caja.scrollHeight;
+  const abajo = caja.scrollHeight - caja.scrollTop - caja.clientHeight < 60; // solo se sigue el final si el usuario ya estaba abajo
+  let vivo = caja.querySelector(".ia-m.vivo");
+  if (A.ocupado && vivo && !A.error) { rellenarVivo(vivo); }
+  else { caja.replaceChildren(...burbujas()); }
+  if (abajo) caja.scrollTop = caja.scrollHeight;
+}
+function rellenarVivo(d) {
+  if (A.parcial) { if (d._parcial !== A.parcial) { d._parcial = A.parcial; d.innerHTML = md(A.parcial); } return; }
+  d._parcial = ""; const t = A.herr ? "Consultando datos… " + A.herr.slice(0, 60) : "Pensando…";
+  if (d._t !== t) { d._t = t; const p = h("p", { class: "ia-pensando", text: t }); d.replaceChildren(p); }
 }
 function burbujas() {
   const b = A.mensajes.map((m) => { const d = h("div", { class: `ia-m ${m.rol === "user" ? "yo" : "ia"}` }); d.innerHTML = md(m.contenido); hidratar(d); return d; });
-  if (A.ocupado) { const d = h("div", { class: "ia-m ia" }); d.innerHTML = A.parcial ? md(A.parcial) : `<p class="ia-pensando">${A.herr ? "Consultando datos… <code>" + A.herr.replace(/</g, "&lt;").slice(0, 70) + "</code>" : "Pensando…"}</p>`; b.push(d); }
+  if (A.ocupado) { const d = h("div", { class: "ia-m ia vivo" }); rellenarVivo(d); b.push(d); }
   if (A.error) b.push(h("div", { class: "ia-m ia ia-err", text: A.error }));
   return b;
 }
@@ -164,8 +187,8 @@ function pintar(root) {
       h("div", { class: "ia-main" },
         h("div", { class: "ia-msgs" }, ...(A.mensajes.length || A.ocupado ? burbujas() : [A.error ? h("div", { class: "ia-m ia ia-err", text: A.error }) : null, h("div", { class: "ia-vacio" }, h("p", { text: "Pregúntame sobre cualquier equipo, jugador, división o temporada que hayas descargado, o sobre tus notas de vídeo." }),
           h("div", { class: "ia-sug" }, sugerencias.map((s) => h("button", { type: "button", class: "btn", onclick: () => enviar(root, s) }, s))))])),
-        configIA(root),
-        h("div", { class: "ia-input" }, entrada, h("button", { type: "button", class: "btn primario", disabled: A.ocupado || null, onclick: () => { const t = entrada.value; entrada.value = ""; enviar(root, t); } }, "Enviar"))))));
+        configIA(root), chipsAdjuntos(root),
+        h("div", { class: "ia-input" }, puedeAdjuntar() ? h("button", { type: "button", class: "btn", title: "Adjuntar PDF, Word, texto, CSV… (la IA lee su texto)", "aria-label": "Adjuntar archivo", onclick: () => adjuntar(root) }, "📎") : null, entrada, h("button", { type: "button", class: "btn primario", disabled: A.ocupado || null, onclick: () => { const t = entrada.value; entrada.value = ""; enviar(root, t); } }, "Enviar"))))));
   const caja = document.querySelector(".ia-msgs"); if (caja) caja.scrollTop = caja.scrollHeight;
   entrada.focus();
 }

@@ -360,11 +360,13 @@ body:has(dialog[open]) { overflow: hidden; }
 .ia-chat { display: flex; align-items: center; border-radius: 8px; } .ia-chat.sel { background: var(--acento-soft); }
 .ia-chat > button:first-child { flex: 1; text-align: left; border: 0; background: none; padding: 6px 8px; cursor: pointer; color: var(--texto); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
 .ia-main { display: flex; flex-direction: column; min-height: 0; }
-.ia-msgs { flex: 1; overflow: auto; display: flex; flex-direction: column; gap: 10px; padding: 4px; }
+.ia-msgs { flex: 1; overflow: auto; overflow-anchor: none; display: flex; flex-direction: column; gap: 10px; padding: 4px; }
 .ia-m { max-width: min(80ch, 92%); padding: 8px 12px; border-radius: 12px; line-height: 1.45; }
 .ia-m.yo { align-self: flex-end; background: var(--acento); color: #fff; } .ia-m.ia { align-self: flex-start; background: var(--panel); border: 1px solid var(--borde); }
 .ia-m p { margin: 0 0 6px; } .ia-m ul { margin: 0 0 6px; padding-left: 20px; } .ia-m h4 { margin: 4px 0; }
-.ia-err { border-color: #c0392b !important; color: #c0392b; } .ia-pensando { color: var(--suave); }
+.ia-err { border-color: #c0392b !important; color: #c0392b; } .ia-pensando { color: var(--suave); margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ia-adj { display: flex; flex-wrap: wrap; gap: 6px; padding-top: 6px; } .ia-chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 4px 2px 10px; border: 1px solid var(--borde); border-radius: 999px; background: var(--panel); font-size: 12px; } .ia-chip button { border: 0; background: none; color: var(--suave); cursor: pointer; padding: 0 6px; }
+.ia-archivo { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--borde); border-radius: 10px; background: var(--panel); margin-top: 6px; } .ia-archivo span { font-weight: 600; margin-right: auto; }
 .ia-input { display: flex; gap: 8px; padding-top: 8px; } .ia-entrada { flex: 1; resize: none; font: inherit; padding: 8px 10px; border: 1px solid var(--borde); border-radius: 10px; background: var(--panel); color: var(--texto); }
 .ia-vacio { margin: auto; text-align: center; max-width: 60ch; color: var(--suave); } .ia-sug { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
 .ia-breve { font-size: 12px; display: inline-flex; align-items: center; gap: 4px; }
