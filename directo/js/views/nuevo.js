@@ -1,8 +1,8 @@
-// Nuevo partido: partido oficial de la FEB, o equipos libres (del JSON o creados desde cero).
-import { h, limpiar, btn, icono, toast, fechaCorta, jornadaTexto, dialogo, nombreJugador } from "../util.js";
+// Nuevo partido: cada equipo se elige del archivo de plantillas o se crea desde cero.
+import { h, limpiar, btn, toast, dialogo, nombreJugador } from "../util.js";
 import { crearCancha } from "../court.js";
 import { app, abrirGrupo, nuevaSesion, crearGrupoSinDatos, guardarJugadorNuevo } from "../estado.js";
-import { listarPartidos, plantillaDe, minutosRecientes, equiposDe, scoutingEquipo } from "../grupo.js";
+import { plantillaDe, minutosRecientes, equiposDe, scoutingEquipo } from "../grupo.js";
 import { navegar } from "../app.js";
 
 const DEF_DORSALES = "4,5,6,7,8,9,10,11,12,13,14,15";
@@ -12,8 +12,6 @@ const NOMBRE_DEF = { local: "EQUIPO LOCAL", visitante: "EQUIPO VISITANTE" };
 export function vistaNuevo(cont) {
   const st = {
     grupoId: app.grupoId || app.grupos[0]?.id || "",
-    modo: "oficial",
-    partido: null,
     fuente: { local: "nuevo", visitante: "nuevo" },
     ids: { local: "", visitante: "" },
     nombres: { ...NOMBRE_DEF },
@@ -24,10 +22,8 @@ export function vistaNuevo(cont) {
     staff: { local: "", visitante: "" },
     plantilla: { local: [], visitante: [] },
     titulares: new Set(),
-    buscar: "",
     cargando: false,
     equipos: [],
-    partidos: [],
     competicion: "",
     grupo: "",
     temporada: "",
@@ -42,7 +38,7 @@ export function vistaNuevo(cont) {
     };
     cuerpo.append(h("div", { class: "vacio" },
       h("strong", { text: "Sin datos FEB" }),
-      h("p", { text: "Puedes empezar a anotar ya con dos equipos nuevos. Si quieres plantillas, informes y partidos de la FEB, importa el JSON." }),
+      h("p", { text: "Puedes empezar a anotar ya con dos equipos nuevos. Si quieres las plantillas de la FEB, importa el archivo de equipos y jugadores." }),
       h("div", { class: "acciones centradas" },
         btn("Empezar sin datos", sinDatos, { clase: "btn primario", icon: "partido" }),
         btn("Importar datos", () => navegar("inicio"), { clase: "btn", icon: "importar" }))));
@@ -116,7 +112,6 @@ export function vistaNuevo(cont) {
   }
 
   function resetEquipos() {
-    st.partido = null;
     st.fuente = { local: "nuevo", visitante: "nuevo" };
     st.ids = { local: "", visitante: "" };
     st.nombres = { ...NOMBRE_DEF };
@@ -134,28 +129,9 @@ export function vistaNuevo(cont) {
   async function cargarGrupo() {
     const db = await abrirGrupo(st.grupoId);
     st.equipos = equiposDe(db);
-    st.partidos = listarPartidos(db, { soloOficiales: true });
     const r = app.grupos.find((g) => g.id === st.grupoId)?.resumen || {};
     st.competicion = r.competicion || ""; st.grupo = r.grupo || ""; st.temporada = r.temporada || "";
-    // Un grupo sin datos FEB (o sin equipos) empieza directamente en equipos libres.
-    if (!st.equipos.length && !st.partidos.length) st.modo = "libre";
     pintar();
-  }
-
-  async function seleccionarPartido(p) {
-    try {
-      st.modo = "oficial";
-      st.partido = p;
-      st.fuente = { local: "json", visitante: "json" };
-      st.ids = { local: p.local_id ? String(p.local_id) : "", visitante: p.visitante_id ? String(p.visitante_id) : "" };
-      st.nombres = { local: p.equipo_local || "", visitante: p.equipo_visitante || "" };
-      st.titulares.clear();
-      await cargarPlantilla("local", p.local_id);
-      await cargarPlantilla("visitante", p.visitante_id);
-      pintar();
-    } catch (e) {
-      console.error(e); toast("No se pudo cargar el partido: " + e.message, "error");
-    }
   }
 
   // ---------------- interfaz ----------------
@@ -175,7 +151,7 @@ export function vistaNuevo(cont) {
       h("div", { class: "acciones" },
         btn("Aplicar plantilla", () => { aplicarManual(lado); pintar(); }, { clase: "btn pequeno", icon: "importado" }),
         h("span", { class: "sub", text: `${st.plantilla[lado].length} jugadores` })),
-    ] : [h("p", { class: "sub", text: "Plantilla cargada del JSON." })];
+    ] : [h("p", { class: "sub", text: "Plantilla cargada del archivo." })];
 
     return h("div", { class: "roster-config" },
       h("label", null, h("span", { text: "Equipo" }), select),
@@ -218,7 +194,7 @@ export function vistaNuevo(cont) {
     return h("div", { class: "acciones" }, d, n, btn("Añadir jugador", () => anadirJugadorNuevo(lado, d.value, n.value), { clase: "btn pequeno", icon: "importado" }));
   }
 
-  function rosterCard(lado, editable) {
+  function rosterCard(lado) {
     const jugadores = st.plantilla[lado] || [];
     const nombre = st.nombres[lado] || NOMBRE_DEF[lado];
     const tit = [...st.titulares].filter((t) => t.startsWith(lado + ":")).length;
@@ -243,32 +219,29 @@ export function vistaNuevo(cont) {
       h("div", { class: "roster-cab" },
         h("div", null, h("h3", { text: nombre }), h("p", { class: "sub", text: `${lado === "local" ? "Local" : "Visitante"} · ${tit} titulares` })),
         h("span", { class: "pill", text: `${jugadores.length} jug.` })),
-      editable ? rosterConfig(lado) : null,
+      rosterConfig(lado),
       jugadores.length
         ? h("ul", { class: "roster-lista" }, lista)
-        : h("p", { class: "sub", text: st.fuente[lado] === "nuevo" ? "Sin jugadores. Escribe dorsales y pulsa «Aplicar plantilla»." : "Ese equipo no tiene plantilla en el JSON." }),
-      editable && st.fuente[lado] === "json" && st.ids[lado] ? formAnadirJugador(lado) : null);
-  }
-
-  function introLibre() {
-    return h("section", { class: "seccion" },
-      h("div", { class: "seccion-cab" }, h("h2", { text: "Equipos libres" }), h("span", { class: "pill", text: "Del JSON o nuevos" })),
-      h("p", { class: "sub", text: "Para cada lado puedes elegir un equipo cargado del JSON (con su plantilla e informe) o crear uno nuevo con sus dorsales." }));
+        : h("p", { class: "sub", text: st.fuente[lado] === "nuevo" ? "Sin jugadores. Escribe dorsales y pulsa «Aplicar plantilla»." : "Ese equipo no tiene plantilla en el archivo." }),
+      st.fuente[lado] === "json" && st.ids[lado] ? formAnadirJugador(lado) : null);
   }
 
   function seccionScouting() {
     const lados = LADOS.filter((l) => st.fuente[l] === "json" && st.ids[l]);
-    if (!lados.length) return null;
+    // Un archivo de solo plantillas no trae temporada: sin partidos ni tiros no hay informe.
+    const tarjetas = lados.map((lado) => {
+      try { return tarjetaScouting(lado, st.ids[lado], st.nombres[lado]); } catch (e) { console.error(e); return null; }
+    }).filter(Boolean);
+    if (!tarjetas.length) return null;
     return h("section", { class: "seccion" },
       h("div", { class: "seccion-cab" }, h("h2", { text: "Informe de scouting" }), h("span", { class: "pill", text: "Temporada · tiros y perfiles del paquete" })),
-      h("div", { class: "rejilla dos" }, lados.map((lado) => {
-        try { return tarjetaScouting(lado, st.ids[lado], st.nombres[lado]); } catch (e) { console.error(e); return null; }
-      })));
+      h("div", { class: "rejilla dos" }, tarjetas));
   }
 
   function tarjetaScouting(lado, equipoId, nombre) {
     const inf = scoutingEquipo(app.grupo, equipoId);
     const c = inf.clas || {};
+    if (!c.pj && !inf.tiros.length) return null;
     const cancha = crearCancha({ interactiva: false });
     cancha.pintarTiros(inf.tiros.slice(0, 900), {
       basketPorTiro: () => (lado === "local" ? "left" : "right"),
@@ -301,8 +274,6 @@ export function vistaNuevo(cont) {
   // ---------------- empezar ----------------
 
   async function empezar() {
-    const p = st.modo === "oficial" ? st.partido : null;
-    if (st.modo === "oficial" && !p) { toast("Elige un partido de la lista.", "aviso"); return; }
     for (const lado of LADOS) {
       if (st.fuente[lado] === "nuevo") aplicarManual(lado);
       st.nombres[lado] = String(st.nombres[lado] || "").trim();
@@ -327,17 +298,18 @@ export function vistaNuevo(cont) {
       if (!ok) return;
     }
     st.cargando = true; pintar();
+    // Con los dos equipos del archivo se conserva su competición y grupo; si no, es un amistoso.
+    const delArchivo = LADOS.every((l) => st.fuente[l] === "json");
     const staff = (lado) => String(st.staff[lado] || "").split("\n").map((x) => x.trim()).filter(Boolean);
     try {
       await nuevaSesion({
-        grupoId: st.grupoId, partido: p,
+        grupoId: st.grupoId,
         local: { equipoId: st.fuente.local === "json" ? st.ids.local || null : null, nombre: st.nombres.local, color: st.colores.local, entrenador: st.entrenadores.local.trim(), staff: staff("local"), jugadores: jug("local") },
         visitante: { equipoId: st.fuente.visitante === "json" ? st.ids.visitante || null : null, nombre: st.nombres.visitante, color: st.colores.visitante, entrenador: st.entrenadores.visitante.trim(), staff: staff("visitante"), jugadores: jug("visitante") },
-        competicion: p ? st.competicion : "AMISTOSO",
-        grupo: p ? st.grupo : "Amistoso",
+        competicion: delArchivo ? st.competicion : "AMISTOSO",
+        grupo: delArchivo ? st.grupo : "Amistoso",
         temporada: st.temporada,
-        jornada: p?.jornada || "",
-        fecha: p?.fecha || new Date().toISOString().slice(0, 16).replace("T", " "),
+        fecha: new Date().toISOString().slice(0, 16).replace("T", " "),
       });
       navegar("partido");
     } catch (e) {
@@ -354,73 +326,31 @@ export function vistaNuevo(cont) {
           app.grupos.map((g) => h("option", { value: g.id, selected: g.id === st.grupoId, text: `${g.resumen?.competicion} · ${g.resumen?.grupo} ${g.resumen?.temporada}` }))))
       : null;
 
-    const seg = h("div", { class: "seg" },
-      h("button", { type: "button", class: st.modo === "oficial" ? "on" : "", onclick: () => { st.modo = "oficial"; pintar(); } }, "Partido oficial"),
-      h("button", { type: "button", class: st.modo === "libre" ? "on" : "", onclick: () => { st.modo = "libre"; st.partido = null; pintar(); } }, "Equipos libres"));
-
-    const selector = st.modo === "oficial" ? listaPartidos() : introLibre();
-    const editable = st.modo === "libre";
-    const mostrarPlantillas = editable || !!st.partido;
-
-    const plantillas = mostrarPlantillas
-      ? h("section", { class: "seccion" },
-        h("div", { class: "seccion-cab" }, h("h2", { text: "Plantillas y titulares" }), h("span", { class: "pill", text: "Toca para marcar los 5 iniciales" })),
-        h("div", { class: "rejilla dos" }, rosterCard("local", editable), rosterCard("visitante", editable)),
-        seccionScouting(),
-        h("div", { class: "acciones centradas" },
-          btn("Intercambiar local/visitante", () => {
-            for (const k of ["fuente", "ids", "nombres", "manualNombre", "manual", "plantilla", "colores", "entrenadores", "staff"]) {
-              [st[k].local, st[k].visitante] = [st[k].visitante, st[k].local];
-            }
-            const tits = new Set();
-            for (const t of st.titulares) { const [l, d] = t.split(":"); tits.add(`${l === "local" ? "visitante" : "local"}:${d}`); }
-            st.titulares = tits;
-            pintar();
-          }, { clase: "btn", icon: "cambiar" }),
-          btn(st.cargando ? "Creando…" : "Empezar partido", empezar, { clase: "btn primario grande", icon: "play", disabled: st.cargando })))
-      : h("section", { class: "seccion" },
-        h("div", { class: "card" }, h("p", { class: "sub", text: "Elige un partido de la lista de arriba para cargar sus equipos y plantillas." })));
+    const plantillas = h("section", { class: "seccion" },
+      h("div", { class: "seccion-cab" }, h("h2", { text: "Plantillas y titulares" }), h("span", { class: "pill", text: "Toca para marcar los 5 iniciales" })),
+      h("div", { class: "rejilla dos" }, rosterCard("local"), rosterCard("visitante")),
+      seccionScouting(),
+      h("div", { class: "acciones centradas" },
+        btn("Intercambiar local/visitante", () => {
+          for (const k of ["fuente", "ids", "nombres", "manualNombre", "manual", "plantilla", "colores", "entrenadores", "staff"]) {
+            [st[k].local, st[k].visitante] = [st[k].visitante, st[k].local];
+          }
+          const tits = new Set();
+          for (const t of st.titulares) { const [l, d] = t.split(":"); tits.add(`${l === "local" ? "visitante" : "local"}:${d}`); }
+          st.titulares = tits;
+          pintar();
+        }, { clase: "btn", icon: "cambiar" }),
+        btn(st.cargando ? "Creando…" : "Empezar partido", empezar, { clase: "btn primario grande", icon: "play", disabled: st.cargando })));
 
     cuerpo.append(
       h("div", { class: "nuevo-cab" },
         h("div", null,
           h("h1", { text: "Nuevo partido" }),
-          h("p", { class: "sub", text: "Partido oficial de la FEB, o equipos libres: del JSON o creados desde cero." })),
-        h("div", { class: "filtros" }, grupos, seg)),
-      selector,
+          h("p", { class: "sub", text: "Elige cada equipo del archivo de plantillas o créalo desde cero." })),
+        h("div", { class: "filtros" }, grupos)),
       plantillas,
-      h("p", { class: "nota-pie", text: "Un equipo del JSON usa su plantilla y su informe de scouting. Un equipo nuevo se gestiona por dorsal; el nombre es obligatorio y los nombres de jugador son opcionales." }),
+      h("p", { class: "nota-pie", text: "Un equipo del archivo usa su plantilla. Un equipo nuevo se gestiona por dorsal; el nombre es obligatorio y los nombres de jugador son opcionales." }),
     );
-  }
-
-  function listaPartidos() {
-    const filtrados = st.partidos.filter((p) => !st.buscar || `${p.equipo_local} ${p.equipo_visitante} ${p.fecha}`.toLowerCase().includes(st.buscar.toLowerCase()));
-    const filas = filtrados.slice(0, 60).map((p) => h("button", { type: "button", class: "partido-fila" + (st.partido?.partido_id === p.partido_id ? " sel" : ""), onclick: () => seleccionarPartido(p) },
-      h("span", { class: "pf-fecha", text: fechaCorta(p.fecha) }),
-      h("span", { class: "pf-eq", text: p.equipo_local }),
-      h("b", { class: "pf-pts", text: `${p.pts_local}–${p.pts_visitante}` }),
-      h("span", { class: "pf-eq der", text: p.equipo_visitante }),
-      h("span", { class: "pf-jor", text: jornadaTexto(p.jornada) })));
-    return h("section", { class: "seccion" },
-      h("div", { class: "seccion-cab" },
-        h("h2", { text: "Partidos" }),
-        h("div", { class: "buscador" }, icono("buscar"), h("input", { type: "search", placeholder: "Equipo o fecha…", value: st.buscar, oninput: (e) => { st.buscar = e.target.value; const lista = cuerpo.querySelector(".lista-partidos"); if (lista) pintarLista(lista); } }))),
-      st.partido ? h("p", { class: "sub", text: `Elegido: ${st.partido.equipo_local} vs ${st.partido.equipo_visitante}` }) : null,
-      h("div", { class: "lista-partidos" }, filas.length ? filas : h("p", { class: "sub", text: "No hay partidos con ese filtro." })));
-  }
-
-  function pintarLista(lista) {
-    const filtrados = st.partidos.filter((p) => !st.buscar || `${p.equipo_local} ${p.equipo_visitante} ${p.fecha}`.toLowerCase().includes(st.buscar.toLowerCase()));
-    limpiar(lista);
-    if (!filtrados.length) { lista.append(h("p", { class: "sub", text: "No hay partidos con ese filtro." })); return; }
-    for (const p of filtrados.slice(0, 60)) {
-      lista.append(h("button", { type: "button", class: "partido-fila" + (st.partido?.partido_id === p.partido_id ? " sel" : ""), onclick: () => seleccionarPartido(p) },
-        h("span", { class: "pf-fecha", text: fechaCorta(p.fecha) }),
-        h("span", { class: "pf-eq", text: p.equipo_local }),
-        h("b", { class: "pf-pts", text: `${p.pts_local}–${p.pts_visitante}` }),
-        h("span", { class: "pf-eq der", text: p.equipo_visitante }),
-        h("span", { class: "pf-jor", text: jornadaTexto(p.jornada) })));
-    }
   }
 
   resetEquipos();

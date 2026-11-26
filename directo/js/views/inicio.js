@@ -148,7 +148,7 @@ function seccionGrupos(cont) {
       h("div", { class: "grupo-cab" },
         h("div", null,
           h("h3", { text: r.competicion || "Grupo" }),
-          h("p", { class: "sub", text: sinD ? "Sin datos FEB · partidos libres" : `${r.grupo || ""} · ${r.temporada || ""}` })),
+          h("p", { class: "sub", text: sinD ? "Sin datos FEB · equipos creados a mano" : `${r.grupo || ""} · ${r.temporada || ""}` })),
         h("span", { class: "pill", text: sinD ? "Sin datos" : `${r.equipos || 0} equipos` })),
       h("dl", { class: "mini-datos" },
         h("div", null, h("dt", { text: "Partidos" }), h("dd", { text: r.partidos ?? 0 })),
