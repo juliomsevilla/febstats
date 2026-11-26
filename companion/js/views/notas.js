@@ -1,7 +1,7 @@
 // Vista «Notas»: notas en Markdown del entrenador, vinculables a temporada / equipo / jugador / partido (o generales).
 // Editor con vista previa, enlaces [[nota]] a lo Obsidian, imágenes, autoguardado con historial de versiones, búsqueda completa y
 // exportación a HTML, Word y PDF (más impresión). Las notas viven en la base de datos (usuario.db), con sus versiones e imágenes; el asistente también las consulta.
-import { h, dialogo, vacioMsg } from "../util.js";
+import { h, dialogo, vacioMsg, menu } from "../util.js";
 import { invoke, MODO, guardarArchivo, enLocal } from "../api.js";
 import { md } from "../md.js";
 import { S, paramHash } from "../state.js";
@@ -390,10 +390,11 @@ async function imprimir() {
   } catch (x) { errorDlg(x); }
 }
 
+const opcionMd = { texto: "Todas las notas en Markdown (.md)…", ayuda: "Guarda todas las notas, con sus imágenes, en una carpeta para abrirlas en otro programa", accion: () => exportarMd() };
 async function exportarMd() {
   const T = window.__TAURI__; if (!T) { estado("Solo en la app del Mac.", true); return; }
   const dir = await T.dialog.open({ directory: true, multiple: false, title: "Elige dónde guardar las notas (.md)" }); if (!dir) return;
-  try { estado(await invoke("notas_exportar_md", { carpeta: dir })); } catch (x) { errorDlg(x); }
+  try { const r = await invoke("notas_exportar_md", { carpeta: dir }); if (refs.estado) estado(r); else dialogo("Notas exportadas", h("p", { text: r })); } catch (x) { errorDlg(x); }
 }
 async function relacionadoDeNota() {
   const e = P.docs.get(P.sel), n = e && P.todas.find((m) => m.id === e.id); if (!n) return;
@@ -497,7 +498,8 @@ function pintarMain() {
   const e = P.docs.get(P.sel);
   if (!e) {
     main.replaceChildren(h("div", { class: "nt-cab" }, botonLado()), h("div", { class: "nt-inicio" }, vacioMsg("Notas", "Notas en Markdown sobre tus equipos, jugadores y partidos. Vincúlalas a una temporada, equipo, jugador o partido (o déjalas generales), enlázalas entre sí con [[nombre]] y pregúntale al asistente por ellas."),
-      EDITABLE ? h("button", { type: "button", class: "btn primario", onclick: nuevaNota }, "Nueva nota") : null));
+      EDITABLE ? h("button", { type: "button", class: "btn primario", onclick: nuevaNota }, "Nueva nota") : null,
+      MODO === "nativo" && P.todas.length ? menu("Exportar", [opcionMd]) : null));
     refs.titulo = refs.vinculo = refs.trabajo = refs.pv = refs.enlaces = refs.deshacer = refs.estado = refs.pie = null; P.cm = null; return;
   }
   refs.titulo = h("input", { type: "text", class: "nt-titulo", "aria-label": "Título de la nota", oninput: (ev) => { e.meta.titulo = ev.target.value.trim(); e.metaSucia = true; clearTimeout(e.t); e.t = setTimeout(() => guardarEntrada(e), 800); } });
@@ -518,9 +520,13 @@ function pintarMain() {
         a === "tabla" ? h("button", { type: "button", class: "btn fantasma nt-b", title: "Insertar imagen (también se puede pegar o arrastrar)", "aria-label": "Insertar imagen", onmousedown: (ev) => ev.preventDefault(), onclick: () => ficheroImg.click() }, "🖼") : null]), ficheroImg),
     h("div", { class: "nt-barra2" }, refs.segVista, h("span", { class: "nt-sep" }),
       h("button", { type: "button", class: "btn", onclick: () => historial() }, "Historial"), h("button", { type: "button", class: "btn", title: "Jugadas, vídeos y otras notas relacionados con esta", onclick: relacionadoDeNota }, "🔗 Relacionado"),
-      h("span", { class: "nt-grupo" }, h("small", { text: "Exportar" }), h("button", { type: "button", class: "btn", onclick: () => exportar("html") }, "HTML"), h("button", { type: "button", class: "btn", onclick: () => exportar("docx") }, "Word"),
-        h("button", { type: "button", class: "btn", disabled: MODO === "nativo" ? null : true, title: MODO === "nativo" ? "" : "Solo en la app del Mac; aquí usa Imprimir → Guardar como PDF", onclick: () => exportar("pdf") }, "PDF")),
-      h("button", { type: "button", class: "btn", onclick: imprimir }, "Imprimir"),
+      menu("Exportar", [
+        { texto: "Página web (HTML)", accion: () => exportar("html") },
+        { texto: "Word (.docx)", accion: () => exportar("docx") },
+        { texto: "PDF", off: MODO !== "nativo", ayuda: MODO === "nativo" ? "" : "Solo en la app del Mac; aquí usa Imprimir → Guardar como PDF", accion: () => exportar("pdf") },
+        { texto: "Imprimir…", accion: imprimir },
+        ...(MODO === "nativo" ? [null, opcionMd] : []),
+      ]),
       h("button", { type: "button", class: "btn fantasma", onclick: borrarNota }, "Borrar"), refs.estado),
     refs.trabajo, h("div", { class: "nt-base" }, refs.enlaces, refs.pie));
   P.cm = crearEditor(refs.ed);
@@ -537,7 +543,7 @@ function pintar() {
   const tog = (k, txt, ayuda) => h("button", { type: "button", class: "chip", "aria-pressed": String(P.f[k]), title: ayuda, onclick: (ev) => { P.f[k] = !P.f[k]; ev.currentTarget.setAttribute("aria-pressed", String(P.f[k])); buscar(); } }, txt);
   refs.lista.append(
     h("div", { class: "nt-lado-cab" }, h("b", { text: "Notas" }), EDITABLE ? h("button", { type: "button", class: "btn primario", onclick: nuevaNota }, "+ Nueva nota") : null),
-    h("div", { class: "nt-buscar" }, entrada, h("div", { class: "nt-opc" }, tog("regex", ".*", "Expresión regular"), tog("mayus", "Aa", "Distinguir mayúsculas y acentos"), MODO === "nativo" ? h("button", { type: "button", class: "chip", title: "Guarda todas las notas como archivos .md (con sus imágenes) en una carpeta, para abrirlas en otro programa", onclick: exportarMd }, "⇩ .md") : null, refs.cuenta)),
+    h("div", { class: "nt-buscar" }, entrada, h("div", { class: "nt-opc" }, tog("regex", ".*", "Expresión regular"), tog("mayus", "Aa", "Distinguir mayúsculas y acentos"), refs.cuenta)),
     refs.filtros, refs.items);
   refs.main = h("section", { class: "nt-centro" });
   root.replaceChildren(h("div", { class: "nt" + (P.lado ? "" : " sin-lado") }, refs.lista, refs.main));

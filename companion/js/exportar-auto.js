@@ -1,7 +1,7 @@
 // Exportación automática: añade botones CSV y PNG a TODAS las tablas y gráficos de la aplicación, sin tocar cada vista.
 // Solo en la app del Mac (no en el iPad). Las tablas se leen del DOM; los gráficos aportan sus datos en `elemento.__exp`
 // ({ csv: {cab, filas}, png: () => canvas, svg?, leyenda?, titulo?, nombre? }).
-import { h, icono } from "./util.js";
+import { h, icono, menu } from "./util.js";
 import { puedeExportar, guardarArchivo } from "./api.js";
 import { nombreArchivo, canvasSvg } from "./export.js";
 import { S } from "./state.js";
@@ -69,10 +69,9 @@ const tituloDe = (el) => {
 const sello = () => (S.data ? [S.data.temporada] : []);
 
 function barra(el, { csv, png, nombre }) {
-  const b = h("div", { class: "exp-barra" },
-    csv ? h("button", { type: "button", class: "btn", title: "Descargar los datos en CSV (Excel)", onclick: async (e) => { e.stopPropagation(); const d = csv(); await guardarArchivo(`${nombre()}.csv`, "data:text/csv;charset=utf-8,﻿" + encodeURIComponent([d.cab.map(celdaCsv).join(";"), ...d.filas.map((f) => f.map((v) => celdaCsv(typeof v === "number" ? String(Math.round(v * 1000) / 1000).replace(".", ",") : v)).join(";"))].join("\r\n"))); } }, icono("descargar"), "CSV") : null,
-    png ? h("button", { type: "button", class: "btn", title: "Descargar como imagen PNG", onclick: async (e) => { e.stopPropagation(); try { const c = await png(); await guardarArchivo(`${nombre()}.png`, c.toDataURL("image/png")); } catch (err) { console.error(err); } } }, icono("descargar"), "PNG") : null);
-  el.before(b);
+  const aCsv = async () => { const d = csv(); await guardarArchivo(`${nombre()}.csv`, "data:text/csv;charset=utf-8,﻿" + encodeURIComponent([d.cab.map(celdaCsv).join(";"), ...d.filas.map((f) => f.map((v) => celdaCsv(typeof v === "number" ? String(Math.round(v * 1000) / 1000).replace(".", ",") : v)).join(";"))].join("\r\n"))); };
+  const aPng = async () => { try { const c = await png(); await guardarArchivo(`${nombre()}.png`, c.toDataURL("image/png")); } catch (err) { console.error(err); } };
+  el.before(h("div", { class: "exp-barra" }, menu([icono("descargar"), "Exportar"], [csv && { texto: "Datos en CSV (Excel)", accion: aCsv }, png && { texto: "Imagen PNG", accion: aPng }].filter(Boolean))));
 }
 
 let pendiente = 0;
@@ -85,10 +84,10 @@ function escanear() {
     barra(ancla, { csv: () => datosTabla(t), png: async () => canvasTabla(t, tituloDe(t)), nombre: () => nombreArchivo(tituloDe(t) || "tabla", ...sello()) });
   }
   for (const el of document.querySelectorAll("*")) {
-    const x = el.__exp; if (!x || el.dataset.exp) continue;
+    const x = el.__exp; if (!x || el.dataset.exp) continue; // `csv` puede ser un getter perezoso: no se evalúa hasta exportar
     el.dataset.exp = "1";
     const png = x.png || (x.svg ? () => canvasSvg(x.svg, { titulo: x.titulo || tituloDe(el), leyenda: x.leyenda || [] }) : null);
-    barra(el, { csv: x.csv ? () => x.csv : null, png, nombre: () => x.nombre || nombreArchivo(x.titulo || tituloDe(el) || "grafico", ...sello()) });
+    barra(el, { csv: "csv" in x ? () => x.csv : null, png, nombre: () => x.nombre || nombreArchivo(x.titulo || tituloDe(el) || "grafico", ...sello()) });
   }
 }
 

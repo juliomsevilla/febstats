@@ -188,6 +188,28 @@ export function dialogo(titulo, cuerpo, sub = "") {
   return d;
 }
 
+/** Botón que despliega un menú de acciones. `opciones`: [{texto, accion, ayuda, off}] y `null` como separador. */
+export function menu(etiqueta, opciones, { clase = "btn", titulo = "" } = {}) {
+  let caja = null;
+  const cerrar = () => { if (!caja) return; caja.remove(); caja = null; boton.setAttribute("aria-expanded", "false");
+    document.removeEventListener("pointerdown", fuera, true); document.removeEventListener("keydown", tecla, true); window.removeEventListener("hashchange", cerrar); window.removeEventListener("resize", cerrar); };
+  const fuera = (ev) => { if (!caja.contains(ev.target) && !boton.contains(ev.target)) cerrar(); };
+  const tecla = (ev) => { if (ev.key === "Escape") { ev.preventDefault(); ev.stopPropagation(); cerrar(); boton.focus(); } };
+  const abrir = () => {
+    caja = h("div", { class: "menu", role: "menu" }, opciones.map((o) => (o ? h("button", { type: "button", role: "menuitem", disabled: o.off || null, title: o.ayuda || null,
+      onclick: (ev) => { ev.stopPropagation(); cerrar(); o.accion(); } }, o.texto) : h("hr"))));
+    (boton.closest("dialog") || document.body).append(caja); // dentro de un diálogo modal, el menú tiene que ir dentro para verse
+    const b = boton.getBoundingClientRect(), c = caja.getBoundingClientRect(); // c da además el desfase del contenedor
+    const x = Math.max(8, Math.min(b.left, innerWidth - c.width - 8)), y = b.bottom + 4 + c.height > innerHeight ? Math.max(8, b.top - c.height - 4) : b.bottom + 4;
+    caja.style.left = `${x - c.left}px`; caja.style.top = `${y - c.top}px`;
+    boton.setAttribute("aria-expanded", "true");
+    document.addEventListener("pointerdown", fuera, true); document.addEventListener("keydown", tecla, true); window.addEventListener("hashchange", cerrar); window.addEventListener("resize", cerrar);
+  };
+  const boton = h("button", { type: "button", class: clase, title: titulo || null, "aria-haspopup": "menu", "aria-expanded": "false", onclick: (ev) => { ev.stopPropagation(); caja ? cerrar() : abrir(); } },
+    ...[etiqueta].flat(), h("span", { class: "menu-flecha", "aria-hidden": "true", text: "▾" }));
+  return boton;
+}
+
 export function tabsBar(opciones, actual, onCambio) {
   return h("div", { class: "tabs", role: "tablist" }, opciones.map(([v, l]) =>
     h("button", { type: "button", role: "tab", "aria-selected": String(v === actual), onclick: () => onCambio(v) }, l)));

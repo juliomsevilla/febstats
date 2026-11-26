@@ -173,7 +173,7 @@ export function aPng(svg, anchoPx = 1200) {
 // ---------- el editor ----------
 const RITMOS = { lento: 2600, normal: 1700, rapido: 1000 };
 /**
- * Pizarra interactiva en `host`. opciones: { datos, editable, jugadores:boolean, alCambiar(datos), alPaso(k), alSeleccionar(sel), pedirTexto(valor)→Promise<string|null>, alTerminar() }
+ * Pizarra interactiva en `host`. opciones: { datos, editable, jugadores:boolean, alCambiar(datos), alPaso(k), alSeleccionar(sel), alAviso(), pedirTexto(valor)→Promise<string|null>, alTerminar() }
  */
 export function crearPizarra(host, opt = {}) {
   let D = normalizar(opt.datos || { pasos: [] }), k = 0, herr = "mover", sel = null, reja = false;
@@ -217,12 +217,12 @@ export function crearPizarra(host, opt = {}) {
     const f = fe ? paso().fichas.find((x) => x.id === fe.dataset.ficha) : null;
     if (asa) { gesto = { tipo: "asa", t: paso().trazos.find((x) => x.id === asa.dataset.asa) }; svg.setPointerCapture(ev.pointerId); return; }
     if (herr === "borrar") { if (f) borrar(f.id, true); else if (te) borrar(te.dataset.trazo, false); return; }
-    if (herr === "balon") { if (f) { paso().balon = f.id; mostrar(); confirmar(); } return; }
+    if (herr === "balon") { if (f) { paso().balon = f.id; mostrar(); confirmar(); } else opt.alAviso && opt.alAviso(); return; }
     if (herr === "of" || herr === "df") { if (f) { seleccionar(f.id); return; } const fi = { id: uid(herr === "of" ? "o" : "d"), tipo: herr, x: p[0], y: p[1], etiqueta: etiquetaLibre(paso(), herr) }; for (let j = k; j < D.pasos.length; j++) D.pasos[j].fichas.push({ ...fi }); if (!paso().balon && herr === "of") paso().balon = null; seleccionar(fi.id); confirmar(); return; }
     if (herr === "texto") { const txt = opt.pedirTexto ? await opt.pedirTexto("") : "Texto"; if (txt) { const t = { id: uid("t"), tipo: "texto", p0: p, c: p, p1: p, texto: txt }; paso().trazos.push(t); seleccionar(t.id); confirmar(); } return; }
     if (herr === "zona") { const t = { id: uid("t"), tipo: "zona", p0: p, c: p, p1: p }; paso().trazos.push(t); gesto = { tipo: "nuevo", t }; svg.setPointerCapture(ev.pointerId); return; }
     if (TIPOS_TRAZO.includes(herr) && herr !== "texto") { // trazo desde una ficha
-      if (!f) { seleccionar(te ? te.dataset.trazo : null); return; }
+      if (!f) { if (te) seleccionar(te.dataset.trazo); else { seleccionar(null); opt.alAviso && opt.alAviso(); } return; }
       const t = { id: uid("t"), tipo: herr, ficha: f.id, p0: [f.x, f.y], c: [f.x, f.y], p1: [f.x, f.y] }; paso().trazos.push(t); gesto = { tipo: "nuevo", t, f }; svg.setPointerCapture(ev.pointerId); return;
     }
     // herramienta «mover»

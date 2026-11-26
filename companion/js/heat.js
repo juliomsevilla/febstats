@@ -37,21 +37,37 @@ const RANGO_EF = 0.55; // ± puntos/tiro respecto a la media de la liga que satu
 /** Rejilla de densidad (nº equivalente de tiros) y puntos suavizados. Pantalla: i = Y (ancho), j = X (largo). */
 export function kde(tiros, { res = 0.1, bw = 1.0 } = {}) {
   const nx = Math.round(C.W / res), ny = Math.round(C.L / res);
-  const dens = new Float32Array(nx * ny), pts = new Float32Array(nx * ny);
-  const rad = Math.ceil((3 * bw) / res), inv = 1 / (2 * bw * bw);
+  // Los tiros se agrupan primero en la rejilla y después se suaviza con un núcleo gaussiano separable: el coste deja de depender del nº de
+  // tiros (una categoría entera son decenas de miles). Equivale al núcleo 2D de antes salvo por situar cada tiro en el centro de su celda (0,1 m).
+  const dens0 = new Float32Array(nx * ny), pts0 = new Float32Array(nx * ny);
   for (const t of tiros) {
-    const p = t.resultado === "acierto" ? puntosDeTiro(t) : 0;
-    const ci = Math.floor(t.Yinv / res), cj = Math.floor(t.Xinv / res);
-    for (let j = Math.max(0, cj - rad); j <= Math.min(ny - 1, cj + rad); j++) {
-      const dx = (j + 0.5) * res - t.Xinv;
-      for (let i = Math.max(0, ci - rad); i <= Math.min(nx - 1, ci + rad); i++) {
-        const dy = (i + 0.5) * res - t.Yinv;
-        const w = Math.exp(-(dx * dx + dy * dy) * inv);
-        dens[j * nx + i] += w;
-        pts[j * nx + i] += w * p;
+    const ci = Math.min(nx - 1, Math.max(0, Math.floor(t.Yinv / res))), cj = Math.min(ny - 1, Math.max(0, Math.floor(t.Xinv / res)));
+    dens0[cj * nx + ci] += 1;
+    if (t.resultado === "acierto") pts0[cj * nx + ci] += puntosDeTiro(t);
+  }
+  const rad = Math.ceil((3 * bw) / res), inv = 1 / (2 * bw * bw);
+  const ker = new Float32Array(2 * rad + 1);
+  for (let d = -rad; d <= rad; d++) ker[d + rad] = Math.exp(-(d * res * d * res) * inv);
+  const suavizar = (src) => {
+    const tmp = new Float32Array(nx * ny), out = new Float32Array(nx * ny);
+    for (let j = 0; j < ny; j++) { // a lo largo de i (ancho)
+      const fila = j * nx;
+      for (let i = 0; i < nx; i++) {
+        const v = src[fila + i];
+        if (v === 0) continue;
+        for (let d = Math.max(-rad, -i); d <= Math.min(rad, nx - 1 - i); d++) tmp[fila + i + d] += v * ker[d + rad];
       }
     }
-  }
+    for (let j = 0; j < ny; j++) { // a lo largo de j (largo)
+      for (let i = 0; i < nx; i++) {
+        const v = tmp[j * nx + i];
+        if (v === 0) continue;
+        for (let d = Math.max(-rad, -j); d <= Math.min(rad, ny - 1 - j); d++) out[(j + d) * nx + i] += v * ker[d + rad];
+      }
+    }
+    return out;
+  };
+  const dens = suavizar(dens0), pts = suavizar(pts0);
   let max = 0;
   for (let k = 0; k < dens.length; k++) if (dens[k] > max) max = dens[k];
   return { nx, ny, res, dens, pts, max, n: tiros.length };
@@ -157,8 +173,10 @@ export function celdasSR(tiros) {
 /** Rojo (pocos pts/tiro) → neutro (1) → verde (muchos). invertido: en "En contra" conceder poco es bueno. */
 export const colorPPA = (ppa, invertido) => rgb(colorEficiencia(ppa < 1 ? ppa - 1 : (ppa - 1) / 0.8, invertido));
 const media = (xs, k) => (xs.length ? xs.reduce((a, x) => a + x[k], 0) / xs.length : 0);
+const agrupar = (lista, clave) => { const m = new Map(); for (const x of lista) { const k = clave(x); const a = m.get(k); if (a) a.push(x); else m.set(k, [x]); } return m; };
 export function srPromedioEntreEquipos(tiros, equipos) {
-  const l = equipos.map((e) => spreadRange(tiros.filter((t) => t.equipo === e)));
+  const por = agrupar(tiros, (t) => t.equipo); // una sola pasada: con una categoría entera hay muchos equipos y decenas de miles de tiros
+  const l = equipos.map((e) => spreadRange(por.get(e) || []));
   return { spread: media(l, "spread"), range: media(l, "range") };
 }
 /** Media real de los jugadores de un equipo (cada uno por separado, no la unión de casillas). */
@@ -169,9 +187,11 @@ export function srPromedioJugadores(tiros) {
   return { spread: media(l, "spread"), range: media(l, "range") };
 }
 export function srContraPromedio(equipos, partidos, tiros) {
+  const porPartido = agrupar(tiros, (t) => t.partido_id);
   const l = equipos.map((e) => {
-    const ids = new Set(partidos.filter((p) => p.equipo_local === e || p.equipo_visitante === e).map((p) => p.partido_id));
-    return spreadRange(tiros.filter((t) => t.equipo !== e && ids.has(t.partido_id)));
+    const rivales = [];
+    for (const p of partidos) if (p.equipo_local === e || p.equipo_visitante === e) for (const t of porPartido.get(p.partido_id) || []) if (t.equipo !== e) rivales.push(t);
+    return spreadRange(rivales);
   });
   return { spread: media(l, "spread"), range: media(l, "range") };
 }

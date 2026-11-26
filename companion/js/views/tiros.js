@@ -23,7 +23,7 @@ function ligaZonas() {
 export function mapaCancha({ tiros, modo, bw = 1.2, invertido = false, grid = null, vmax = null, ac = true, fa = true, tamano = "normal", xp = null }) {
   const centro = S.idx.ppaLiga, c = crearCancha({ res: 0.1 }), ligaZ = ligaZonas();
   const stZ = estadisticasZonas(tiros);
-  let puntos = [], celdas = null;
+  let puntos = [], celdas = null, indice = null;
   if (modo === "calor") pintarDensidad(c.canvas, grid || kde(tiros, { bw }), vmax, invertido);
   else if (modo === "eficiencia") pintarEficiencia(c.canvas, grid || kde(tiros, { bw }), { centro, invertido });
   else if (modo === "zonas") {
@@ -54,13 +54,8 @@ export function mapaCancha({ tiros, modo, bw = 1.2, invertido = false, grid = nu
     c.datos.append(g);
   } else if (modo === "puntos") {
     puntos = tiros.filter((t) => (t.resultado === "acierto" ? ac : fa));
-    const g = s("g");
-    for (const t of puntos) {
-      const [vx, vy] = posView(t.Xinv, t.Yinv);
-      if (t.resultado === "acierto") g.append(s("circle", { class: "t-ac", cx: vx, cy: vy, r: 0.2 }));
-      else g.append(s("path", { class: "t-fa", d: `M${vx - 0.15},${vy - 0.15}L${vx + 0.15},${vy + 0.15}M${vx + 0.15},${vy - 0.15}L${vx - 0.15},${vy + 0.15}` }));
-    }
-    c.datos.append(g);
+    c.datos.append(capaTiros(puntos, (t) => posView(t.Xinv, t.Yinv)));
+    indice = indiceEspacial(puntos);
   }
   const marca = s("circle", { class: "t-hover", r: 0.3, visibility: "hidden" });
   c.datos.append(marca);
@@ -70,7 +65,7 @@ export function mapaCancha({ tiros, modo, bw = 1.2, invertido = false, grid = nu
     if (x < 0 || x > 14 || y < 0 || y > 15) return tip.hide();
     if (modo === "puntos") {
       let best = null, bd = 0.5;
-      for (const t of puntos) { const d = Math.hypot(t.Xinv - x, t.Yinv - y); if (d < bd) { bd = d; best = t; } }
+      for (const t of indice(x, y)) { const d = Math.hypot(t.Xinv - x, t.Yinv - y); if (d < bd) { bd = d; best = t; } }
       if (best) {
         const [vx, vy] = posView(best.Xinv, best.Yinv);
         marca.setAttribute("cx", vx); marca.setAttribute("cy", vy); marca.setAttribute("visibility", "visible");
@@ -100,14 +95,39 @@ export function mapaCancha({ tiros, modo, bw = 1.2, invertido = false, grid = nu
   return c;
 }
 
-function canchaCompleta(tiros, ac, fa, invertido = false) {
-  const c = crearCanchaCompleta(), g = s("g");
-  for (const t of tiros.filter((x) => (x.resultado === "acierto" ? ac : fa))) {
-    const [vx, vy] = posView(t.X, t.Y);
-    if (t.resultado === "acierto") g.append(s("circle", { class: "t-ac", cx: vx, cy: vy, r: 0.2 }));
-    else g.append(s("path", { class: "t-fa", d: `M${vx - 0.15},${vy - 0.15}L${vx + 0.15},${vy + 0.15}M${vx + 0.15},${vy - 0.15}L${vx - 0.15},${vy + 0.15}` }));
+/** Todos los tiros en solo dos elementos SVG (aciertos como círculos, fallos como aspas): con decenas de miles de tiros (una categoría entera)
+ *  un elemento por tiro bloquea la pantalla. Cada tiro se coloca con `pos(t)` → [x, y] en la vista. */
+function capaTiros(lista, pos) {
+  // Con muchos tiros (una categoría entera) los marcadores grandes y con borde blanco tapan todo: se usan marcadores pequeños, sin borde y
+  // semitransparentes, repartidos en varias capas para que se acumulen y se vea dónde se concentran (la densidad se lee por el color).
+  const denso = lista.length > 1500, K = denso ? 12 : 6; // varias capas: donde se solapan tiros el color se intensifica
+  const r = denso ? (lista.length > 20000 ? 0.075 : 0.1) : 0.2, a = denso ? 0.07 : 0.15;
+  const ac = Array.from({ length: K }, () => []), fa = Array.from({ length: K }, () => []);
+  let i = 0;
+  for (const t of lista) {
+    const [vx, vy] = pos(t), x = +vx.toFixed(3), y = +vy.toFixed(3), k = i++ % K;
+    if (t.resultado === "acierto") ac[k].push(`M${(x - r).toFixed(3)},${y}a${r},${r} 0 1 0 ${2 * r},0a${r},${r} 0 1 0 ${-2 * r},0`);
+    else fa[k].push(`M${(x - a).toFixed(3)},${(y - a).toFixed(3)}l${2 * a},${2 * a}m0,${-2 * a}l${-2 * a},${2 * a}`);
   }
-  c.datos.append(g);
+  const g = s("g");
+  for (const l of fa) if (l.length) g.append(s("path", { class: "t-fa" + (denso ? " denso" : ""), d: l.join("") }));
+  for (const l of ac) if (l.length) g.append(s("path", { class: "t-ac" + (denso ? " denso" : ""), d: l.join("") }));
+  return g;
+}
+/** Búsqueda del tiro más cercano al puntero sin recorrerlos todos: rejilla de 0,5 m; devuelve los tiros de la celda y sus vecinas. */
+function indiceEspacial(lista) {
+  const celda = 0.5, m = new Map(), k = (i, j) => i * 100 + j;
+  for (const t of lista) { const kk = k(Math.floor(t.Xinv / celda), Math.floor(t.Yinv / celda)); (m.get(kk) || m.set(kk, []).get(kk)).push(t); }
+  return (x, y) => {
+    const i = Math.floor(x / celda), j = Math.floor(y / celda), out = [];
+    for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) { const l = m.get(k(i + di, j + dj)); if (l) for (const t of l) out.push(t); }
+    return out;
+  };
+}
+
+function canchaCompleta(tiros, ac, fa, invertido = false) {
+  const c = crearCanchaCompleta();
+  c.datos.append(capaTiros(tiros.filter((x) => (x.resultado === "acierto" ? ac : fa)), (t) => posView(t.X, t.Y)));
   c.el.style.maxWidth = "420px";
   botonPNG(c.el, nombreArchivo("mapa", ctxArchivo, "pista_completa", invertido ? "en_contra" : "a_favor"), tiros);
   return c.el;
@@ -140,7 +160,7 @@ function seleccion(f) {
 // Exportación de los mapas (PNG y CSV de los tiros): la toolbar la añade exportar-auto.js (solo en la app del Mac).
 let ctxArchivo = "";
 const csvTiros = (tiros) => ({ cab: ["Jugador", "Equipo", "Cuarto", "Resultado", "X (m)", "Y (m)", "X plegada (m)", "Y plegada (m)"], filas: (tiros || []).map((t) => [t.jugador, t.equipo, t.cuarto, t.resultado, t.X, t.Y, t.Xinv, t.Yinv]) });
-function botonPNG(el, archivo, tiros) { el.__exp = { nombre: archivo, png: () => canvasCancha(el), csv: csvTiros(tiros) }; }
+function botonPNG(el, archivo, tiros) { el.__exp = { nombre: archivo, png: () => canvasCancha(el), get csv() { return csvTiros(tiros); } }; } // el CSV se arma solo al exportar (no por cada mapa pintado)
 
 export function vistaTiros(root, f) {
   const { foco, base, contra, dos } = seleccion(f), rerender = () => vistaTiros(root, f);

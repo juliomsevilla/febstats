@@ -108,14 +108,20 @@ function pintar(root) {
     D.log.length ? h("pre", { class: "dat-log", text: D.log.join("\n") }) : null);
 
   const todo = async () => { for (const f of D.fuentes) { if (D.error) break; await descargar(root, { competicionId: f.competicion_id, slug: f.slug, temporada: f.temporada_valor, grupoValor: f.grupo_valor }); } };
+  const conPend = D.fuentes.filter((x) => x.pendientes > 0);
+  const aviso = conPend.length ? h("div", { class: "dat-aviso", role: "alert" }, h("b", { text: "⚠ Faltan partidos por descargar: " }),
+    `${conPend.reduce((a, x) => a + x.pendientes, 0)} en ${conPend.length} grupo(s). Pulsa «Actualizar» en los marcados con ⚠ (o «Actualizar todo»): solo se descargan los que faltan.`) : null;
   const lista = h("div", { class: "card" }, h("h2", { text: "Datos guardados " }, D.fuentes.length > 1 ? h("button", { type: "button", class: "btn", disabled: D.activo || !D.navegador || null, onclick: todo }, "Actualizar todo") : null),
+    aviso,
     S.grupos.length ? h("table", { class: "dat-tabla" }, h("thead", null, h("tr", null, ["Competición", "Grupo", "Temporada", "Partidos", "Actualizado", ""].map((t) => h("th", { text: t })))),
       h("tbody", null, S.grupos.map((g) => {
         const f = D.fuentes.find((x) => x.db === g.db);
-        return h("tr", null, h("td", { text: g.competicion }), h("td", { text: (g.grupo || "").replace(/"/g, "") }), h("td", { text: g.temporada }), h("td", { text: g.partidos ?? "" }),
+        const pend = f?.pendientes > 0 ? f.pendientes : 0;
+        return h("tr", null, h("td", { text: g.competicion }), h("td", { text: (g.grupo || "").replace(/"/g, "") }), h("td", { text: g.temporada }),
+          h("td", null, String(g.partidos ?? ""), pend ? h("span", { class: "dat-pend", title: `${pend} partido(s) de este grupo no se han podido descargar. Pulsa «Actualizar» para reintentarlo.`, text: ` ⚠ faltan ${pend}` }) : null),
           h("td", { text: f ? (f.actualizado || "").slice(0, 16) : "" }),
           h("td", null, h("a", { class: "btn fantasma", href: `#/equipo?db=${encodeURIComponent(g.db)}` }, "Ver"),
-            f ? h("button", { type: "button", class: "btn", disabled: D.activo || !D.navegador || null, onclick: () => descargar(root, { competicionId: f.competicion_id, slug: f.slug, temporada: f.temporada_valor, grupoValor: f.grupo_valor }) }, "Actualizar")
+            f ? h("button", { type: "button", class: pend ? "btn primario" : "btn", disabled: D.activo || !D.navegador || null, onclick: () => descargar(root, { competicionId: f.competicion_id, slug: f.slug, temporada: f.temporada_valor, grupoValor: f.grupo_valor }) }, "Actualizar")
               : h("span", { class: "vid-ayuda", title: "Descárgalo una vez desde el formulario de arriba (no repite los partidos que ya tiene) y quedará con botón «Actualizar»", text: "sin origen" })));
       }))) : vacioMsg("Aún no has descargado nada", "Elige competición, temporada y grupo arriba. Cada vez que se jueguen partidos nuevos, pulsa «Actualizar»: solo se descargan los nuevos."));
   root.replaceChildren(nuevo, lista, ...(MODO === "nativo" ? [importar(root), exportar(root), exportarDirecto(root)] : []));

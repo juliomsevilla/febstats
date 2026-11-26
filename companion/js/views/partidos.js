@@ -33,7 +33,7 @@ async function marcarVideos(root) {
     const prev = card.querySelector(".vid-ins");
     if (prev) { prev.dataset.n = Number(prev.dataset.n) + 1; prev.textContent = `🎥 ${prev.dataset.n}`; prev.title = "Varios vídeos de este partido"; continue; }
     card.append(h("span", { class: "vid-ins", "data-n": 1, role: "button", tabindex: 0, title: `Ver vídeo: ${v.titulo} (${v.n_eventos} marcas)`, text: "🎥",
-      onclick: (ev) => { ev.stopPropagation(); window.__abrirVideo = v.id; location.hash = "#/video"; } }));
+      onclick: (ev) => { ev.stopPropagation(); location.hash = `#/video?v=${v.id}`; } }));
   }
 }
 

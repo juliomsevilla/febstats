@@ -43,7 +43,7 @@ const ctxDe = (o) => ({ temporada: o.temporada || "", partido: String(o.partido 
 /** Normaliza cada fuente a documentos {tipo, id, titulo, ctx, texto, menciones, ...}. */
 export const docsDeNotas = (ns) => (ns || []).map((n) => ({ tipo: "nota", id: String(n.id), titulo: n.titulo, ctx: ctxDe(n.meta || {}), texto: n.extracto || "", menciones: n.enlaces || [], ref: n }));
 export const docsDeJugadas = (js) => (js || []).map((j) => ({ tipo: "jugada", id: String(j.id), titulo: j.titulo, ctx: ctxDe(j), texto: [j.texto, j.descripcion].filter(Boolean).join("\n"), menciones: menciones(j.descripcion), ref: j }));
-export const docsDeVideos = (vs) => (vs || []).map((v) => ({ tipo: "video", id: String(v.id), titulo: v.titulo, ctx: ctxDe({ partido: v.partido_id }), texto: "", menciones: [], ref: v }));
+export const docsDeVideos = (vs) => (vs || []).map((v) => ({ tipo: "video", id: String(v.id), titulo: v.titulo, ctx: ctxDe({ partido: v.partido_id }), texto: v.descripcion || "", menciones: menciones(v.descripcion), ref: v }));
 export const docsDeMarcas = (ms) => (ms || []).map((m) => ({ tipo: "marca", id: String(m.id), titulo: `${m.video} · ${m.boton || "marca"}`, ctx: ctxDe({ partido: m.partido_id, equipo: m.equipo_id, equipo_txt: m.equipo, jugador: m.jugador_id, jugador_txt: m.jugador }), texto: m.nota || "", menciones: menciones(m.nota), ref: m }));
 
 /** Todos los documentos del usuario. Lo que no exista en este dispositivo (p. ej. notas en el iPad) simplemente no aparece. */

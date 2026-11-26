@@ -1,7 +1,7 @@
 // Vista «Playbook»: diseñador de jugadas (pizarra con pista media o completa, pasos y reproducción), biblioteca por colecciones y
 // vinculación con partidos, jugadores, notas y vídeos. Las jugadas se guardan en usuario.db; el asistente las lee como texto.
 // En el iPad (modo local) es solo un visor: se ven y se reproducen, no se editan.
-import { h, dialogo, vacioMsg } from "../util.js";
+import { h, dialogo, vacioMsg, menu } from "../util.js";
 import { invoke, enLocal, MODO, guardarArchivo } from "../api.js";
 import { S, paramHash } from "../state.js";
 import { crearPizarra, svgJugada, aPng } from "../pizarra.js";
@@ -11,6 +11,7 @@ import { panelRelacionado, elegirDocumento } from "./relacionado.js";
 import { docsDeJugadas } from "../relaciones.js";
 import { cargarLibs, renderizar, hidratarImagenes, documentoHtml, esc } from "../mdx.js";
 import { md } from "../md.js";
+import { crearPaleta } from "./jugada-herramientas.js";
 
 const EDITABLE = !enLocal;
 const P = { lista: [], sel: null, pz: null, entradas: new Map(), lado: true, f: { q: "", temporada: "", equipo: "", jugador: "", coleccion: "" }, ritmo: "normal", bucle: false, tab: "desc", seleccion: null, reja: false };
@@ -160,6 +161,7 @@ async function importarJson(fichero) {
     await refrescar(); await abrir(id);
   } catch (x) { errorDlg("El archivo no es una jugada válida: " + msg(x)); }
 }
+const hojaVisibles = () => hoja(P.lista.filter(pasa), "Playbook");
 /** Hoja HTML de una o varias jugadas (un paso por viñeta, pasos en texto y descripción): para imprimir y para PDF. */
 async function hojaHtml(js, titulo) {
   let libs = false; const trozos = [];
@@ -191,9 +193,6 @@ async function hoja(js, titulo) {
 }
 
 // ---------- interfaz del editor ----------
-const HERRAMIENTAS = [["mover", "↖", "Mover y seleccionar"], ["of", "①", "Añadir jugador de ataque"], ["df", "Ⓧ", "Añadir defensor"], ["balon", "🏀", "Dar el balón a una ficha"], null,
-  ["corte", "⤴", "Corte (arrastra desde una ficha)"], ["bote", "〰", "Bote / drive"], ["pase", "⇢", "Pase (suelta sobre otra ficha)"], ["entrega", "⋯›", "Entrega de mano a mano"], ["bloqueo", "⊣", "Bloqueo"], ["tiro", "◎", "Tiro a canasta"], null,
-  ["zona", "⬭", "Zona señalada"], ["texto", "T", "Texto"], null, ["borrar", "🗑", "Borrar (pulsa una ficha o un trazo)"]];
 function pedirTexto(valor) {
   return new Promise((res) => { const i = h("input", { type: "text", value: valor, placeholder: "Texto", style: { width: "100%" } }); const ok = () => { d.close(); res(i.value.trim() || null); };
     const d = dialogo("Texto", h("div", { class: "nt-form" }, i, h("div", { class: "nt-acciones" }, h("button", { type: "button", class: "btn", onclick: () => { d.close(); res(null); } }, "Cancelar"), h("button", { type: "button", class: "btn primario", onclick: ok }, "Aceptar"))));
@@ -208,7 +207,7 @@ function pintarPasos() {
     h("button", { type: "button", class: "btn fantasma nt-b", "aria-label": "Paso anterior", onclick: () => P.pz.irAPaso(k - 1) }, "◀"),
     ...D.pasos.map((p, i) => h("button", { type: "button", class: "jg-paso" + (i === k ? " on" : ""), onclick: () => P.pz.irAPaso(i), ondblclick: EDITABLE ? async () => { const n = await pedirTexto(p.nombre); if (n) { P.pz.irAPaso(i); P.pz.renombrarPaso(n); } } : null, title: "Doble clic para renombrar" }, p.nombre)),
     h("button", { type: "button", class: "btn fantasma nt-b", "aria-label": "Paso siguiente", onclick: () => P.pz.irAPaso(k + 1) }, "▶"),
-    EDITABLE ? h("button", { type: "button", class: "btn nt-b", title: "Añade un paso copiando las posiciones del actual", onclick: () => P.pz.anadirPaso() }, "+ Paso") : null,
+    EDITABLE ? h("button", { type: "button", class: "btn nt-b", title: "Añade un paso copiando las posiciones del actual", onclick: () => P.pz.anadirPaso() }, "+ Añadir paso") : null,
     EDITABLE ? h("button", { type: "button", class: "btn fantasma nt-b", title: "Eliminar el paso actual", disabled: D.pasos.length < 2 ? true : null, onclick: () => P.pz.borrarPaso() }, "Quitar paso") : null,
     h("span", { class: "nt-sep" }),
     h("button", { type: "button", class: "btn primario nt-b", onclick: () => (P.pz.reproduciendo ? P.pz.parar() : P.pz.reproducir({ ritmo: P.ritmo, bucle: P.bucle })) }, rep ? "■ Parar" : "▶ Reproducir"),
@@ -267,7 +266,8 @@ function pintarMain() {
   if (P.pz) { P.pz.destruir(); P.pz = null; } if (P.ro) { P.ro.disconnect(); P.ro = null; }
   if (!e) {
     main.replaceChildren(h("div", { class: "nt-cab" }, botonLado()), h("div", { class: "nt-inicio" }, vacioMsg("Playbook", EDITABLE ? "Diseña jugadas sobre una pista media o completa, por pasos y con reproducción animada. Vincúlalas a partidos, jugadores y equipos, enlázalas desde tus notas y marcas de vídeo, y el asistente las entenderá." : "Jugadas del Mac, para consultar y reproducir."),
-      EDITABLE ? h("button", { type: "button", class: "btn primario", onclick: nuevaJugada }, "Nueva jugada") : null));
+      EDITABLE ? h("button", { type: "button", class: "btn primario", onclick: nuevaJugada }, "Nueva jugada") : null,
+      EDITABLE && P.lista.length ? menu("Exportar", [{ texto: "Hoja de las jugadas de la lista…", accion: hojaVisibles }]) : null));
     refs.pasos = refs.panel = refs.estado = refs.vinculo = null; return;
   }
   const j = e.j;
@@ -277,25 +277,32 @@ function pintarMain() {
   const seccion = h("input", { type: "text", class: "jg-col-in", placeholder: "Sección", value: j.seccion || "", title: "Sección dentro de la colección", disabled: EDITABLE ? null : true, oninput: (ev) => { j.seccion = ev.target.value.trim(); programar(e); } });
   const lienzo = h("div", { class: "jg-lienzo" });
   refs.pasos = h("div", { class: "jg-pasos" }); refs.panel = h("aside", { class: "jg-panel", "aria-label": "Panel de la jugada" });
-  refs.deshacer = h("button", { type: "button", class: "btn fantasma nt-b", title: "Deshacer (Cmd+Z)", "aria-label": "Deshacer", onclick: () => P.pz.deshacer() }, "↶");
-  refs.rehacer = h("button", { type: "button", class: "btn fantasma nt-b", title: "Rehacer (Cmd+Mayús+Z)", "aria-label": "Rehacer", onclick: () => P.pz.rehacer() }, "↷");
+  refs.deshacer = h("button", { type: "button", class: "btn fantasma nt-b", title: "Deshacer (Cmd+Z)", "aria-label": "Deshacer", onclick: () => P.pz.deshacer() }, "↶ Deshacer");
+  refs.rehacer = h("button", { type: "button", class: "btn fantasma nt-b", title: "Rehacer (Cmd+Mayús+Z)", "aria-label": "Rehacer", onclick: () => P.pz.rehacer() }, "↷ Rehacer");
   const ficheroJson = h("input", { type: "file", accept: "application/json,.json", hidden: true, onchange: (ev) => { if (ev.target.files[0]) importarJson(ev.target.files[0]); ev.target.value = ""; } });
-  const paleta = EDITABLE ? h("div", { class: "jg-paleta", role: "toolbar", "aria-label": "Herramientas" }, HERRAMIENTAS.map((t) => (t ? h("button", { type: "button", class: "jg-h" + (t[0] === "mover" ? " on" : ""), title: t[2], "aria-label": t[2], "data-h": t[0], onclick: (ev) => { P.pz.herramienta(t[0]); paleta.querySelectorAll(".jg-h").forEach((b) => b.classList.toggle("on", b === ev.currentTarget)); } }, t[1]) : h("span", { class: "jg-hsep" })))) : null;
+  const herr = EDITABLE ? crearPaleta((id) => { P.pz.herramienta(id); lienzo.dataset.h = id; }) : null;
   const barra = EDITABLE ? h("div", { class: "nt-barra2 jg-barra" },
     refs.deshacer, refs.rehacer, h("span", { class: "nt-sep" }),
     h("div", { class: "seg", role: "radiogroup", "aria-label": "Pista" }, [["media", "Media pista"], ["completa", "Pista completa"]].map(([v, t]) => h("button", { type: "button", role: "radio", "aria-checked": String(e.datos.pista === v), class: e.datos.pista === v ? "on" : "", onclick: () => { P.pz.cambiarPista(v); e.datos = P.pz.datos; pintarMain(); } }, t))),
-    h("button", { type: "button", class: "btn", title: "Refleja la jugada de izquierda a derecha", onclick: () => P.pz.espejo() }, "⇋ Espejo"),
-    h("label", { class: "jg-chk", title: "Ajusta las fichas a una rejilla de 0,5 m" }, h("input", { type: "checkbox", checked: P.reja || null, onchange: (ev) => { P.reja = ev.target.checked; P.pz.reja(P.reja); } }), " Rejilla"),
+    h("button", { type: "button", class: "btn", title: "Refleja la jugada de izquierda a derecha", onclick: () => P.pz.espejo() }, "⇋ Voltear lados"),
+    h("label", { class: "jg-chk", title: "Ajusta las fichas a una rejilla de 0,5 m" }, h("input", { type: "checkbox", checked: P.reja || null, onchange: (ev) => { P.reja = ev.target.checked; P.pz.reja(P.reja); } }), " Ajustar a rejilla"),
     h("span", { class: "nt-sep" }),
-    h("span", { class: "nt-grupo" }, h("small", { text: "Exportar" }), h("button", { type: "button", class: "btn", onclick: () => exportarPng(false) }, "PNG paso"), h("button", { type: "button", class: "btn", onclick: () => exportarPng(true) }, "PNG todos"), h("button", { type: "button", class: "btn", onclick: exportarJson }, "JSON"), h("button", { type: "button", class: "btn", onclick: () => ficheroJson.click() }, "Importar…"), ficheroJson),
-    h("button", { type: "button", class: "btn", onclick: () => hoja([{ ...j, datos: JSON.stringify(e.datos) }], j.titulo) }, "Hoja / PDF"),
+    menu("Exportar", [
+      { texto: "Imagen PNG de este paso", accion: () => exportarPng(false) },
+      { texto: "Imagen PNG de todos los pasos", accion: () => exportarPng(true) },
+      { texto: "Hoja de la jugada (PDF o imprimir)…", accion: () => hoja([{ ...j, datos: JSON.stringify(e.datos) }], j.titulo) },
+      { texto: "Hoja de las jugadas de la lista…", ayuda: "Todas las que muestra la biblioteca con la búsqueda y los filtros actuales", accion: hojaVisibles },
+      null,
+      { texto: "Archivo de jugada (JSON)", accion: exportarJson },
+      { texto: "Importar jugada (JSON)…", accion: () => ficheroJson.click() },
+    ]), ficheroJson,
     h("button", { type: "button", class: "btn fantasma", onclick: duplicarJugada }, "Duplicar"), h("button", { type: "button", class: "btn fantasma", onclick: borrarJugada }, "Borrar"), refs.estado) : null;
   main.replaceChildren(...[
     h("div", { class: "nt-cab" }, botonLado(), refs.titulo, EDITABLE ? h("button", { type: "button", class: "btn", onclick: vincular, title: "Vincular a temporada, equipo, jugador o partido" }, refs.vinculo, " ✎") : refs.vinculo, EDITABLE || j.coleccion ? coleccion : null, EDITABLE || j.seccion ? seccion : null,
       h("datalist", { id: "jg-colecciones" }, unicos("coleccion").map((c) => h("option", { value: c })))),
     barra,
-    h("div", { class: "jg-trabajo" }, paleta, h("div", { class: "jg-centro" }, lienzo, refs.pasos), refs.panel)].filter(Boolean));
-  P.pz = crearPizarra(lienzo, { datos: e.datos, editable: EDITABLE, pedirTexto, alPaso: () => { pintarPasos(); pintarDeshacer(); }, alTerminar: () => pintarPasos(),
+    h("div", { class: "jg-trabajo" + (herr ? "" : " visor") }, herr?.paleta, h("div", { class: "jg-centro" }, herr?.ayuda, lienzo, refs.pasos), refs.panel)].filter(Boolean));
+  P.pz = crearPizarra(lienzo, { datos: e.datos, editable: EDITABLE, pedirTexto, alAviso: herr?.aviso, alPaso: () => { pintarPasos(); pintarDeshacer(); }, alTerminar: () => pintarPasos(),
     alSeleccionar: (s0) => { P.seleccion = s0; if (s0 && EDITABLE) { P.tab = "ficha"; } pintarPanel(); },
     alCambiar: (datos) => { e.datos = datos; programar(e); pintarDeshacer(); pintarPasos(); if (P.tab === "desc") { const det = refs.panel?.querySelector(".jg-texto pre"); if (det) det.textContent = describir(datos); } } });
   P.pz.reja(P.reja);
@@ -313,7 +320,7 @@ function pintar() {
   refs.filtros = h("div", { class: "nt-filtros" }); refs.cuenta = h("small", { class: "nt-cuenta" }); refs.items = h("div", { class: "nt-items" });
   const entrada = h("input", { type: "search", class: "nt-q", placeholder: "Buscar jugadas…", value: P.f.q, "aria-label": "Buscar jugadas", oninput: (ev) => { P.f.q = ev.target.value; pintarLista(); } });
   refs.lista.append(h("div", { class: "nt-lado-cab" }, h("b", { text: "Playbook" }), EDITABLE ? h("button", { type: "button", class: "btn primario", onclick: nuevaJugada }, "+ Nueva jugada") : null),
-    h("div", { class: "nt-buscar" }, entrada, h("div", { class: "nt-opc" }, refs.cuenta)), refs.filtros, EDITABLE ? h("div", { class: "jg-fila" }, h("button", { type: "button", class: "btn fantasma", onclick: () => hoja(P.lista.filter(pasa), "Playbook") }, "🖨 Hoja de lo visible")) : null, refs.items);
+    h("div", { class: "nt-buscar" }, entrada, h("div", { class: "nt-opc" }, refs.cuenta)), refs.filtros, refs.items);
   refs.main = h("section", { class: "nt-centro jg-centro-main" });
   root.replaceChildren(h("div", { class: "jg nt" + (P.lado ? "" : " sin-lado") }, refs.lista, refs.main));
   pintarLista(); pintarMain();

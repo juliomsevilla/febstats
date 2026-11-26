@@ -140,12 +140,12 @@ async function render() {
   const main = $("vista");
   main.classList.toggle("ancho", hash.view === "notas" || hash.view === "playbook" || hash.view === "video"); // estas pantallas usan todo el ancho de la ventana
   try {
+    if (window.__quitarAtajos) window.__quitarAtajos(); // atajos y reproducción de la vista de vídeo
     if (["consulta", "scouting", "video", "ajustes", "ia", "notas", "playbook"].includes(hash.view) && VISTAS.some((x) => x[0] === hash.view)) { // no dependen de ningún grupo de datos FEB
       const v = VISTAS.find((x) => x[0] === hash.view);
       document.title = `${v[1]} · FEBstats`; pintarNav(v[0], hash.db || ""); $("top").replaceChildren(); $("top").style.display = "none";
       await v[2](main); S._previa = v[0]; return;
     }
-    if (window.__quitarAtajos) window.__quitarAtajos();
     $("top").style.display = "";
     if (!S.grupos.length) S.grupos = await cargarGrupos();
     if (!S.categorias) { try { S.categorias = (MODO === "nativo" || MODO === "remoto") ? (await invoke("listar_categorias")).filter((c) => c.grupos > 1) : []; } catch { S.categorias = []; } }
